@@ -20,7 +20,7 @@
 package com.kunzisoft.keepass.database.iterator;
 
 import com.kunzisoft.keepass.database.PwEntryV3;
-import com.kunzisoft.keepass.database.SearchParameters;
+import com.kunzisoft.keepass.database.search.SearchParameters;
 
 import java.util.NoSuchElementException;
 
@@ -76,15 +76,19 @@ public class EntrySearchStringIteratorV3 extends EntrySearchStringIterator {
             switch (current) {
             case title:
                 found = sp.searchInTitles;
+				break;
             
             case url:
             	found = sp.searchInUrls;
+				break;
                     
             case username:
-                found = sp.searchInUserNames;    
+                found = sp.searchInUserNames;
+				break;
             	
             case comment:
             	found = sp.searchInNotes;
+				break;
                     
             default:
             	found = true;

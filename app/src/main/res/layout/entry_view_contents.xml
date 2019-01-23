@@ -52,7 +52,7 @@
 			android:layout_alignParentEnd="true"
 			android:layout_alignParentRight="true"
 			android:layout_below="@+id/entry_user_name_label"
-			android:src="@drawable/ic_content_copy_black_24dp"
+			android:src="@drawable/ic_content_copy_white_24dp"
 			android:tint="?attr/colorAccent" />
     </RelativeLayout>
 
@@ -80,6 +80,7 @@
                 android:layout_height="wrap_content"
                 android:scrollHorizontally="true"
                 android:inputType="textPassword"
+				android:importantForAccessibility="no"
                 android:focusable="false"
                 android:lines="1"
                 style="@style/KeepassDXStyle.TextAppearance.TextEntryItem" />
@@ -91,7 +92,7 @@
             android:layout_alignParentEnd="true"
             android:layout_alignParentRight="true"
             android:layout_below="@+id/entry_password_label"
-            android:src="@drawable/ic_content_copy_black_24dp"
+            android:src="@drawable/ic_content_copy_white_24dp"
             android:tint="?attr/colorAccent" />
     </RelativeLayout>
 

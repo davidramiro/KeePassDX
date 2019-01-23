@@ -39,6 +39,11 @@
     <PreferenceCategory
         android:title="@string/text_appearance">
 
+        <SwitchPreference
+            android:key="@string/list_entries_show_username_key"
+            android:title="@string/list_entries_show_username_title"
+            android:summary="@string/list_entries_show_username_summary"
+            android:defaultValue="@bool/list_entries_show_username_default"/>
         <ListPreference
             android:key="@string/list_size_key"
             android:title="@string/list_size_title"
@@ -63,6 +68,11 @@
     <PreferenceCategory
         android:title="@string/other">
 
+        <SwitchPreference
+            android:key="@string/enable_education_screens_key"
+            android:title="@string/enable_education_screens_title"
+            android:summary="@string/enable_education_screens_summary"
+            android:defaultValue="@bool/enable_education_screens_default"/>
         <Preference
             android:key="@string/reset_education_screens_key"
             android:title="@string/reset_education_screens_title"

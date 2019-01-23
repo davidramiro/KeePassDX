@@ -42,6 +42,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 package com.kunzisoft.keepass.database;
 
+import android.os.Parcel;
+
 import java.io.UnsupportedEncodingException;
 import java.util.UUID;
 
@@ -75,15 +77,11 @@ public class PwEntryV3 extends PwEntry<PwGroupV3> {
 	private static final String PMS_ID_USER    = "SYSTEM";
 	private static final String PMS_ID_URL     = "$";
 
-    // TODO Parent ID to remove
-    private int groupId;
-
     private String title;
 	private	String username;
 	private byte[] password;
 	private String url;
 	private String additional;
-
 	/** A string describing what is in pBinaryData */
 	private String           binaryDesc;
 	private byte[]          binaryData;
@@ -94,12 +92,45 @@ public class PwEntryV3 extends PwEntry<PwGroupV3> {
 	
 	public PwEntryV3(PwGroupV3 p) {
 	    construct(p);
-		groupId = ((PwGroupIdV3) this.parent.getId()).getId(); // TODO remove
 	}
+
+    public PwEntryV3(Parcel in) {
+        super(in);
+        title = in.readString();
+        username = in.readString();
+        in.readByteArray(password);
+        url = in.readString();
+        additional = in.readString();
+        binaryDesc = in.readString();
+        in.readByteArray(binaryData);
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        super.writeToParcel(dest, flags);
+        dest.writeString(title);
+        dest.writeString(username);
+        dest.writeByteArray(password);
+        dest.writeString(url);
+        dest.writeString(additional);
+        dest.writeString(binaryDesc);
+        dest.writeByteArray(binaryData);
+    }
+
+    public static final Creator<PwEntryV3> CREATOR = new Creator<PwEntryV3>() {
+        @Override
+        public PwEntryV3 createFromParcel(Parcel in) {
+            return new PwEntryV3(in);
+        }
+
+        @Override
+        public PwEntryV3[] newArray(int size) {
+            return new PwEntryV3[size];
+        }
+    };
 
     protected void updateWith(PwEntryV3 source) {
         super.assign(source);
-        groupId = source.groupId;
 
         title = source.title;
         username = source.username;
@@ -145,12 +176,9 @@ public class PwEntryV3 extends PwEntry<PwGroupV3> {
         return newEntry;
     }
 
-    public int getGroupId() {
-	    return groupId;
-    }
-
     public void setGroupId(int groupId) {
-	    this.groupId = groupId;
+	    this.parent = new PwGroupV3();
+	    this.parent.setGroupId(groupId);
     }
 
     @Override
@@ -199,7 +227,7 @@ public class PwEntryV3 extends PwEntry<PwGroupV3> {
     public void populateBlankFields(PwDatabaseV3 db) {
 	    // TODO verify and remove
         if (icon == null) {
-            icon = db.getIconFactory().getFirstIcon();
+            icon = db.getIconFactory().getKeyIcon();
         }
 
         if (username == null) {

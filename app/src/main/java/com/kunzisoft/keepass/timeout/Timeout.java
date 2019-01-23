@@ -28,17 +28,16 @@ import android.preference.PreferenceManager;
 import android.util.Log;
 
 import com.kunzisoft.keepass.R;
+import com.kunzisoft.keepass.lock.LockingActivity;
 
 public class Timeout {
-
-	public static final String TIMEOUT = "com.kunzisoft.keepass.timeout";
 
 	private static final int REQUEST_ID = 0;
 	private static final long DEFAULT_TIMEOUT = 5 * 60 * 1000;  // 5 minutes
 	private static String TAG = "KeePass Timeout";
 
 	private static PendingIntent buildIntent(Context ctx) {
-		Intent intent = new Intent(TIMEOUT);
+		Intent intent = new Intent(LockingActivity.LOCK_ACTION);
         return PendingIntent.getBroadcast(ctx, REQUEST_ID, intent, PendingIntent.FLAG_CANCEL_CURRENT);
 	}
 	
@@ -57,8 +56,6 @@ public class Timeout {
 			// No timeout don't start timeout service
 			return;
 		}
-		
-		ctx.startService(new Intent(ctx, TimeoutService.class));
 
 		long triggerTime = System.currentTimeMillis() + timeout;
 		AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
@@ -76,8 +73,6 @@ public class Timeout {
         if (am != null) {
             am.cancel(buildIntent(ctx));
         }
-
-        ctx.stopService(new Intent(ctx, TimeoutService.class));
 	}
 
 }

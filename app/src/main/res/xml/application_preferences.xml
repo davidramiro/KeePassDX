@@ -21,6 +21,22 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory
+        android:title="@string/general">
+
+        <SwitchPreference
+            android:summary="@string/allow_no_password_summary"
+            android:defaultValue="@bool/allow_no_password_default"
+            android:title="@string/allow_no_password_title"
+            android:key="@string/allow_no_password_key"/>
+        <SwitchPreference
+            android:summary="@string/enable_read_only_summary"
+            android:defaultValue="@bool/enable_read_only_default"
+            android:title="@string/enable_read_only_title"
+            android:key="@string/enable_read_only_key"/>
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
         android:title="@string/search_label">
 
         <SwitchPreference
@@ -35,21 +51,13 @@
         android:title="@string/lock">
 
         <ListPreference
-            android:key="@string/clipboard_timeout_key"
-            android:title="@string/clipboard_timeout"
-            android:summary="@string/clipboard_timeout_summary"
-            android:entries="@array/timeout_options"
-            android:entryValues="@array/timeout_values"
-            android:dialogTitle="@string/clipboard_timeout"
-            android:defaultValue="@string/clipboard_timeout_default"/>
-        <ListPreference
             android:key="@string/app_timeout_key"
             android:title="@string/app_timeout"
             android:summary="@string/app_timeout_summary"
             android:entries="@array/timeout_options"
             android:entryValues="@array/timeout_values"
             android:dialogTitle="@string/app_timeout"
-            android:defaultValue="@string/app_timeout_default"/>
+            android:defaultValue="@string/timeout_default"/>
         <SwitchPreference
             android:key="@string/lock_database_screen_off_key"
             android:title="@string/lock_database_screen_off_title"

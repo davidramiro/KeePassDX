@@ -24,7 +24,6 @@ import android.content.Intent;
 import android.content.res.TypedArray;
 import android.graphics.Color;
 import android.os.Bundle;
-import android.os.Handler;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.Menu;
@@ -49,14 +48,16 @@ import com.kunzisoft.keepass.database.PwEntry;
 import com.kunzisoft.keepass.database.PwGroup;
 import com.kunzisoft.keepass.database.PwGroupId;
 import com.kunzisoft.keepass.database.PwIconStandard;
-import com.kunzisoft.keepass.database.action.AddEntryRunnable;
-import com.kunzisoft.keepass.database.action.OnFinishRunnable;
+import com.kunzisoft.keepass.database.PwNode;
 import com.kunzisoft.keepass.database.action.RunnableOnFinish;
-import com.kunzisoft.keepass.database.action.UpdateEntryRunnable;
+import com.kunzisoft.keepass.database.action.node.AddEntryRunnable;
+import com.kunzisoft.keepass.database.action.node.AfterActionNodeOnFinish;
+import com.kunzisoft.keepass.database.action.node.UpdateEntryRunnable;
 import com.kunzisoft.keepass.database.security.ProtectedString;
 import com.kunzisoft.keepass.dialogs.GeneratePasswordDialogFragment;
 import com.kunzisoft.keepass.dialogs.IconPickerDialogFragment;
-import com.kunzisoft.keepass.icons.IconPackChooser;
+import com.kunzisoft.keepass.lock.LockingActivity;
+import com.kunzisoft.keepass.lock.LockingHideActivity;
 import com.kunzisoft.keepass.settings.PreferencesUtil;
 import com.kunzisoft.keepass.tasks.SaveDatabaseProgressTaskDialogFragment;
 import com.kunzisoft.keepass.tasks.UpdateProgressTaskStatus;
@@ -67,7 +68,9 @@ import com.kunzisoft.keepass.view.EntryEditCustomField;
 
 import java.util.UUID;
 
-import static com.kunzisoft.keepass.dialogs.IconPickerDialogFragment.UNDEFINED_ICON_ID;
+import javax.annotation.Nullable;
+
+import static com.kunzisoft.keepass.dialogs.IconPickerDialogFragment.KEY_ICON_STANDARD;
 
 public class EntryEditActivity extends LockingHideActivity
 		implements IconPickerDialogFragment.IconPickerListener,
@@ -85,10 +88,12 @@ public class EntryEditActivity extends LockingHideActivity
 	public static final int ADD_OR_UPDATE_ENTRY_REQUEST_CODE = 7129;
 	public static final String ADD_OR_UPDATE_ENTRY_KEY = "ADD_OR_UPDATE_ENTRY_KEY";
 
+	private Database database;
+
 	protected PwEntry mEntry;
 	protected PwEntry mCallbackNewEntry;
 	protected boolean mIsNew;
-	protected int mSelectedIconID = UNDEFINED_ICON_ID;
+	protected PwIconStandard mSelectedIconStandard;
 
     // Views
     private ScrollView scrollView;
@@ -139,7 +144,6 @@ public class EntryEditActivity extends LockingHideActivity
 		setContentView(R.layout.entry_edit);
 
         Toolbar toolbar = findViewById(R.id.toolbar);
-        toolbar.setTitle(getString(R.string.app_name));
         setSupportActionBar(toolbar);
         assert getSupportActionBar() != null;
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
@@ -158,8 +162,8 @@ public class EntryEditActivity extends LockingHideActivity
         entryExtraFieldsContainer = findViewById(R.id.advanced_container);
 		
 		// Likely the app has been killed exit the activity
-		Database db = App.getDB();
-		if ( ! db.getLoaded() ) {
+        database = App.getDB();
+		if ( ! database.getLoaded() ) {
 			finish();
 			return;
 		}
@@ -172,18 +176,16 @@ public class EntryEditActivity extends LockingHideActivity
         TypedArray ta = getTheme().obtainStyledAttributes(attrs);
         iconColor = ta.getColor(0, Color.WHITE);
 
-		PwDatabase pm = db.getPwDatabase();
+        mSelectedIconStandard = database.getPwDatabase().getIconFactory().getUnknownIcon();
+
+		PwDatabase pm = database.getPwDatabase();
 		if ( uuidBytes == null ) {
-            PwGroupId parentId = (PwGroupId) intent.getSerializableExtra(KEY_PARENT);
+            PwGroupId parentId = intent.getParcelableExtra(KEY_PARENT);
 			PwGroup parent = pm.getGroupByGroupId(parentId);
-			mEntry = db.createEntry(parent);
+			mEntry = database.createEntry(parent);
 			mIsNew = true;
 			// Add the default icon
-            if (IconPackChooser.getSelectedIconPack(this).tintable()) {
-                App.getDB().getDrawFactory().assignDefaultDatabaseIconTo(this, entryIconView, true, iconColor);
-            } else {
-                App.getDB().getDrawFactory().assignDefaultDatabaseIconTo(this, entryIconView);
-            }
+            database.getDrawFactory().assignDefaultDatabaseIconTo(this, entryIconView, iconColor);
 		} else {
 			UUID uuid = Types.bytestoUUID(uuidBytes);
 			mEntry = pm.getEntryByUUIDId(uuid);
@@ -191,8 +193,12 @@ public class EntryEditActivity extends LockingHideActivity
 			fillData();
 		}
 
+        // Assign title
+        setTitle((mIsNew) ? getString(R.string.add_entry) : getString(R.string.edit_entry));
+
 		// Retrieve the icon after an orientation change
-		if (savedInstanceState != null && savedInstanceState.containsKey(IconPickerDialogFragment.KEY_ICON_ID)) {
+		if (savedInstanceState != null
+                && savedInstanceState.containsKey(KEY_ICON_STANDARD)) {
             iconPicked(savedInstanceState);
         }
 
@@ -251,13 +257,13 @@ public class EntryEditActivity extends LockingHideActivity
         mCallbackNewEntry = populateNewEntry();
 
         // Open a progress dialog and save entry
-        OnFinishRunnable onFinish = new AfterSave();
+        AfterActionNodeOnFinish onFinish = new AfterSave();
         EntryEditActivity act = EntryEditActivity.this;
         RunnableOnFinish task;
         if ( mIsNew ) {
-            task = new AddEntryRunnable(act, App.getDB(), mCallbackNewEntry, onFinish);
+            task = new AddEntryRunnable(act, database, mCallbackNewEntry, onFinish);
         } else {
-            task = new UpdateEntryRunnable(act, App.getDB(), mEntry, mCallbackNewEntry, onFinish);
+            task = new UpdateEntryRunnable(act, database, mEntry, mCallbackNewEntry, onFinish);
         }
         task.setUpdateProgressTaskStatus(
                 new UpdateProgressTaskStatus(this,
@@ -272,59 +278,58 @@ public class EntryEditActivity extends LockingHideActivity
      * Displays the explanation for the icon selection, the password generator and for a new field
      */
     private void checkAndPerformedEducation() {
+        if (PreferencesUtil.isEducationScreensEnabled(this)) {
+            // TODO Show icon
 
-	    // TODO Show icon
+            if (!PreferencesUtil.isEducationPasswordGeneratorPerformed(this)) {
+                TapTargetView.showFor(this,
+                        TapTarget.forView(generatePasswordView,
+                                getString(R.string.education_generate_password_title),
+                                getString(R.string.education_generate_password_summary))
+                                .textColorInt(Color.WHITE)
+                                .tintTarget(false)
+                                .cancelable(true),
+                        new TapTargetView.Listener() {
+                            @Override
+                            public void onTargetClick(TapTargetView view) {
+                                super.onTargetClick(view);
+                                openPasswordGenerator();
+                            }
 
-        if (!PreferencesUtil.isEducationPasswordGeneratorPerformed(this)) {
-            TapTargetView.showFor(this,
-                    TapTarget.forView(generatePasswordView,
-                            getString(R.string.education_generate_password_title),
-                            getString(R.string.education_generate_password_summary))
-                            .textColorInt(Color.WHITE)
-                            .tintTarget(false)
-                            .cancelable(true),
-                    new TapTargetView.Listener() {
-                        @Override
-                        public void onTargetClick(TapTargetView view) {
-                            super.onTargetClick(view);
-                            openPasswordGenerator();
-                        }
-
-                        @Override
-                        public void onOuterCircleClick(TapTargetView view) {
-                            super.onOuterCircleClick(view);
-                            view.dismiss(false);
-                        }
-                    });
-            PreferencesUtil.saveEducationPreference(this,
-                    R.string.education_password_generator_key);
-        }
-
-        else if (mEntry.allowExtraFields()
+                            @Override
+                            public void onOuterCircleClick(TapTargetView view) {
+                                super.onOuterCircleClick(view);
+                                view.dismiss(false);
+                            }
+                        });
+                PreferencesUtil.saveEducationPreference(this,
+                        R.string.education_password_generator_key);
+            } else if (mEntry.allowExtraFields()
                     && !mEntry.containsCustomFields()
                     && !PreferencesUtil.isEducationEntryNewFieldPerformed(this)) {
-            TapTargetView.showFor(this,
-                    TapTarget.forView(addNewFieldView,
-                            getString(R.string.education_entry_new_field_title),
-                            getString(R.string.education_entry_new_field_summary))
-                            .textColorInt(Color.WHITE)
-                            .tintTarget(false)
-                            .cancelable(true),
-                    new TapTargetView.Listener() {
-                        @Override
-                        public void onTargetClick(TapTargetView view) {
-                            super.onTargetClick(view);
-                            addNewCustomField();
-                        }
+                TapTargetView.showFor(this,
+                        TapTarget.forView(addNewFieldView,
+                                getString(R.string.education_entry_new_field_title),
+                                getString(R.string.education_entry_new_field_summary))
+                                .textColorInt(Color.WHITE)
+                                .tintTarget(false)
+                                .cancelable(true),
+                        new TapTargetView.Listener() {
+                            @Override
+                            public void onTargetClick(TapTargetView view) {
+                                super.onTargetClick(view);
+                                addNewCustomField();
+                            }
 
-                        @Override
-                        public void onOuterCircleClick(TapTargetView view) {
-                            super.onOuterCircleClick(view);
-                            view.dismiss(false);
-                        }
-                    });
-            PreferencesUtil.saveEducationPreference(this,
-                    R.string.education_entry_new_field_key);
+                            @Override
+                            public void onOuterCircleClick(TapTargetView view) {
+                                super.onOuterCircleClick(view);
+                                view.dismiss(false);
+                            }
+                        });
+                PreferencesUtil.saveEducationPreference(this,
+                        R.string.education_entry_new_field_key);
+            }
         }
     }
 
@@ -406,7 +411,7 @@ public class EntryEditActivity extends LockingHideActivity
         newEntry.setLastModificationTime(new PwDate());
 
         newEntry.setTitle(entryTitleView.getText().toString());
-        newEntry.setIcon(retrieveIcon());
+        newEntry.setIconStandard(retrieveIcon());
 
         newEntry.setUrl(entryUrlView.getText().toString());
         newEntry.setUsername(entryUserNameView.getText().toString());
@@ -426,21 +431,21 @@ public class EntryEditActivity extends LockingHideActivity
             }
         }
 
-        newEntry.endToManageFieldReferences();
+        newEntry.stopToManageFieldReferences();
 
         return newEntry;
 	}
 
     /**
      * Retrieve the icon by the selection, or the first icon in the list if the entry is new or the last one
-     * @return
      */
 	private PwIconStandard retrieveIcon() {
-        if(mSelectedIconID != UNDEFINED_ICON_ID)
-            return App.getDB().getPwDatabase().getIconFactory().getIcon(mSelectedIconID);
+
+        if (!mSelectedIconStandard.isUnknown())
+            return mSelectedIconStandard;
         else {
             if (mIsNew) {
-                return App.getDB().getPwDatabase().getIconFactory().getFirstIcon();
+                return database.getPwDatabase().getIconFactory().getKeyIcon();
             }
             else {
                 // Keep previous icon, if no new one was selected
@@ -472,16 +477,21 @@ public class EntryEditActivity extends LockingHideActivity
 		return super.onOptionsItemSelected(item);
 	}
 
+	private void assignIconView() {
+        database.getDrawFactory()
+                .assignDatabaseIconTo(
+                        this,
+                        entryIconView,
+                        mEntry.getIcon(),
+                        iconColor);
+    }
+
 	protected void fillData() {
 
-        if (IconPackChooser.getSelectedIconPack(this).tintable()) {
-            App.getDB().getDrawFactory().assignDatabaseIconTo(this, entryIconView, mEntry.getIcon(), true, iconColor);
-        } else {
-            App.getDB().getDrawFactory().assignDatabaseIconTo(this, entryIconView, mEntry.getIcon());
-        }
+        assignIconView();
 
 		// Don't start the field reference manager, we want to see the raw ref
-        mEntry.endToManageFieldReferences();
+        mEntry.stopToManageFieldReferences();
 
         entryTitleView.setText(mEntry.getTitle());
         entryUserNameView.setText(mEntry.getUsername());
@@ -512,14 +522,15 @@ public class EntryEditActivity extends LockingHideActivity
 
     @Override
     public void iconPicked(Bundle bundle) {
-        mSelectedIconID = bundle.getInt(IconPickerDialogFragment.KEY_ICON_ID);
-        entryIconView.setImageResource(IconPackChooser.getSelectedIconPack(this).iconToResId(mSelectedIconID));
+        mSelectedIconStandard = bundle.getParcelable(KEY_ICON_STANDARD);
+        mEntry.setIconStandard(mSelectedIconStandard);
+        assignIconView();
     }
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
-        if (mSelectedIconID != UNDEFINED_ICON_ID) {
-            outState.putInt(IconPickerDialogFragment.KEY_ICON_ID, mSelectedIconID);
+        if (!mSelectedIconStandard.isUnknown()) {
+            outState.putParcelable(KEY_ICON_STANDARD, mSelectedIconStandard);
             super.onSaveInstanceState(outState);
         }
     }
@@ -545,7 +556,7 @@ public class EntryEditActivity extends LockingHideActivity
             if (mCallbackNewEntry != null) {
                 Bundle bundle = new Bundle();
                 Intent intentEntry = new Intent();
-                bundle.putSerializable(ADD_OR_UPDATE_ENTRY_KEY, mCallbackNewEntry);
+                bundle.putParcelable(ADD_OR_UPDATE_ENTRY_KEY, mCallbackNewEntry);
                 intentEntry.putExtras(bundle);
                 if (mIsNew) {
                     setResult(ADD_ENTRY_RESULT_CODE, intentEntry);
@@ -560,14 +571,10 @@ public class EntryEditActivity extends LockingHideActivity
         }
 	}
 
-	private final class AfterSave extends OnFinishRunnable {
-
-		AfterSave() {
-			super(new Handler());
-		}
+	private final class AfterSave extends AfterActionNodeOnFinish {
 
 		@Override
-		public void run() {
+        public void run(@Nullable PwNode oldNode, @Nullable PwNode newNode) {
 		    runOnUiThread(() -> {
                 if ( mSuccess ) {
                     finish();
@@ -578,6 +585,6 @@ public class EntryEditActivity extends LockingHideActivity
                 SaveDatabaseProgressTaskDialogFragment.stop(EntryEditActivity.this);
             });
 		}
-	}
+    }
 
 }

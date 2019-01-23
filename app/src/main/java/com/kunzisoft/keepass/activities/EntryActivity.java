@@ -28,6 +28,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.support.v7.app.AlertDialog;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.Menu;
@@ -46,7 +47,8 @@ import com.kunzisoft.keepass.database.ExtraFields;
 import com.kunzisoft.keepass.database.PwDatabase;
 import com.kunzisoft.keepass.database.PwEntry;
 import com.kunzisoft.keepass.database.security.ProtectedString;
-import com.kunzisoft.keepass.icons.IconPackChooser;
+import com.kunzisoft.keepass.lock.LockingActivity;
+import com.kunzisoft.keepass.lock.LockingHideActivity;
 import com.kunzisoft.keepass.notifications.NotificationCopyingService;
 import com.kunzisoft.keepass.notifications.NotificationField;
 import com.kunzisoft.keepass.settings.PreferencesUtil;
@@ -63,6 +65,7 @@ import java.util.Date;
 import java.util.UUID;
 
 import static com.kunzisoft.keepass.settings.PreferencesUtil.isClipboardNotificationsEnable;
+import static com.kunzisoft.keepass.settings.PreferencesUtil.isFirstTimeAskAllowCopyPasswordAndProtectedFields;
 
 public class EntryActivity extends LockingHideActivity {
     private final static String TAG = EntryActivity.class.getName();
@@ -76,15 +79,17 @@ public class EntryActivity extends LockingHideActivity {
 	
 	protected PwEntry mEntry;
 	private boolean mShowPassword;
-	protected boolean readOnly = false;
 
 	private ClipboardHelper clipboardHelper;
 	private boolean firstLaunchOfActivity;
 
-    public static void launch(Activity act, PwEntry pw) {
+	private int iconColor;
+
+    public static void launch(Activity act, PwEntry pw, boolean readOnly) {
         if (LockingActivity.checkTimeIsAllowedOrFinish(act)) {
             Intent intent = new Intent(act, EntryActivity.class);
             intent.putExtra(KEY_ENTRY, Types.UUIDtoBytes(pw.getUUID()));
+            ReadOnlyHelper.putReadOnlyInIntent(intent, readOnly);
             act.startActivityForResult(intent, EntryEditActivity.ADD_OR_UPDATE_ENTRY_REQUEST_CODE);
         }
     }
@@ -108,7 +113,7 @@ public class EntryActivity extends LockingHideActivity {
 			finish();
 			return;
 		}
-		readOnly = db.isReadOnly();
+		readOnly = db.isReadOnly() || readOnly;
 
         mShowPassword = !PreferencesUtil.isPasswordMask(this);
 
@@ -121,6 +126,11 @@ public class EntryActivity extends LockingHideActivity {
 			finish();
 			return;
 		}
+
+        // Retrieve the textColor to tint the icon
+        int[] attrs = {R.attr.textColorInverse};
+        TypedArray ta = getTheme().obtainStyledAttributes(attrs);
+        iconColor = ta.getColor(0, Color.WHITE);
 		
 		// Refresh Menu contents in case onCreateMenuOptions was called before mEntry was set
 		invalidateOptionsMenu();
@@ -150,12 +160,28 @@ public class EntryActivity extends LockingHideActivity {
         // Start to manage field reference to copy a value from ref
         mEntry.startToManageFieldReferences(App.getDB().getPwDatabase());
 
+        boolean containsUsernameToCopy =
+                mEntry.getUsername().length() > 0;
+        boolean containsPasswordToCopy =
+                (mEntry.getPassword().length() > 0
+                        && PreferencesUtil.allowCopyPasswordAndProtectedFields(this));
+        boolean containsExtraFieldToCopy =
+                (mEntry.allowExtraFields()
+                        && ((mEntry.containsCustomFields()
+                                && mEntry.containsCustomFieldsNotProtected())
+                            || (mEntry.containsCustomFields()
+                                && mEntry.containsCustomFieldsProtected()
+                                && PreferencesUtil.allowCopyPasswordAndProtectedFields(this))
+                        )
+                );
+
         // If notifications enabled in settings
         // Don't if application timeout
         if (firstLaunchOfActivity && !App.isShutdown() && isClipboardNotificationsEnable(getApplicationContext())) {
-            if (mEntry.getUsername().length() > 0
-                    || (mEntry.getPassword().length() > 0 && PreferencesUtil.allowCopyPassword(this))
-                    || mEntry.containsCustomFields()) {
+            if (containsUsernameToCopy
+                    || containsPasswordToCopy
+                    || containsExtraFieldToCopy
+                    ) {
                 // username already copied, waiting for user's action before copy password.
                 Intent intent = new Intent(this, NotificationCopyingService.class);
                 intent.setAction(NotificationCopyingService.ACTION_NEW_NOTIFICATION);
@@ -164,35 +190,37 @@ public class EntryActivity extends LockingHideActivity {
                 // Construct notification fields
                 ArrayList<NotificationField> notificationFields = new ArrayList<>();
                 // Add username if exists to notifications
-                if (mEntry.getUsername().length() > 0)
+                if (containsUsernameToCopy)
                     notificationFields.add(
                             new NotificationField(
                                     NotificationField.NotificationFieldId.USERNAME,
                                     mEntry.getUsername(),
                                     getResources()));
                 // Add password to notifications
-                if (PreferencesUtil.allowCopyPassword(this)) {
-                    if (mEntry.getPassword().length() > 0)
-                        notificationFields.add(
-                                new NotificationField(
-                                        NotificationField.NotificationFieldId.PASSWORD,
-                                        mEntry.getPassword(),
-                                        getResources()));
+                if (containsPasswordToCopy) {
+                    notificationFields.add(
+                            new NotificationField(
+                                    NotificationField.NotificationFieldId.PASSWORD,
+                                    mEntry.getPassword(),
+                                    getResources()));
                 }
                 // Add extra fields
-                if (mEntry.allowExtraFields()) {
+                if (containsExtraFieldToCopy) {
                     try {
                         mEntry.getFields().doActionToAllCustomProtectedField(new ExtraFields.ActionProtected() {
                             private int anonymousFieldNumber = 0;
                             @Override
                             public void doAction(String key, ProtectedString value) {
-                                notificationFields.add(
-                                        new NotificationField(
-                                                NotificationField.NotificationFieldId.getAnonymousFieldId()[anonymousFieldNumber],
-                                                value.toString(),
-                                                key,
-                                                getResources()));
-                                anonymousFieldNumber++;
+                                //If value is not protected or allowed
+                                if (!value.isProtected() || PreferencesUtil.allowCopyPasswordAndProtectedFields(EntryActivity.this)) {
+                                    notificationFields.add(
+                                            new NotificationField(
+                                                    NotificationField.NotificationFieldId.getAnonymousFieldId()[anonymousFieldNumber],
+                                                    value.toString(),
+                                                    key,
+                                                    getResources()));
+                                    anonymousFieldNumber++;
+                                }
                             }
                         });
                     } catch (ArrayIndexOutOfBoundsException e) {
@@ -205,7 +233,7 @@ public class EntryActivity extends LockingHideActivity {
 
                 startService(intent);
             }
-            mEntry.endToManageFieldReferences();
+            mEntry.stopToManageFieldReferences();
         }
         firstLaunchOfActivity = false;
     }
@@ -215,68 +243,70 @@ public class EntryActivity extends LockingHideActivity {
      * Displays the explanation for copying a field and editing an entry
      */
     private void checkAndPerformedEducation(Menu menu) {
+        if (PreferencesUtil.isEducationScreensEnabled(this)) {
 
-        if (entryContentsView != null && entryContentsView.isUserNamePresent()
-                && !PreferencesUtil.isEducationCopyUsernamePerformed(this)) {
-            TapTargetView.showFor(this,
-                    TapTarget.forView(findViewById(R.id.entry_user_name_action_image),
-                            getString(R.string.education_field_copy_title),
-                            getString(R.string.education_field_copy_summary))
-                            .textColorInt(Color.WHITE)
-                            .tintTarget(false)
-                            .cancelable(true),
-                    new TapTargetView.Listener() {
-                        @Override
-                        public void onTargetClick(TapTargetView view) {
-                            super.onTargetClick(view);
-                            clipboardHelper.timeoutCopyToClipboard(mEntry.getUsername(),
-                                    getString(R.string.copy_field, getString(R.string.entry_user_name)));
-                        }
-
-                        @Override
-                        public void onOuterCircleClick(TapTargetView view) {
-                            super.onOuterCircleClick(view);
-                            view.dismiss(false);
-                            // Launch autofill settings
-                            startActivity(new Intent(EntryActivity.this, SettingsAutofillActivity.class));
-                        }
-                    });
-            PreferencesUtil.saveEducationPreference(this,
-                    R.string.education_copy_username_key);
-
-        } else if (!PreferencesUtil.isEducationEntryEditPerformed(this)) {
-
-            try {
+            if (entryContentsView != null && entryContentsView.isUserNamePresent()
+                    && !PreferencesUtil.isEducationCopyUsernamePerformed(this)) {
                 TapTargetView.showFor(this,
-                        TapTarget.forToolbarMenuItem(toolbar, R.id.menu_edit,
-                                getString(R.string.education_entry_edit_title),
-                                getString(R.string.education_entry_edit_summary))
+                        TapTarget.forView(findViewById(R.id.entry_user_name_action_image),
+                                getString(R.string.education_field_copy_title),
+                                getString(R.string.education_field_copy_summary))
                                 .textColorInt(Color.WHITE)
-                                .tintTarget(true)
+                                .tintTarget(false)
                                 .cancelable(true),
                         new TapTargetView.Listener() {
                             @Override
                             public void onTargetClick(TapTargetView view) {
                                 super.onTargetClick(view);
-                                MenuItem editItem = menu.findItem(R.id.menu_edit);
-                                onOptionsItemSelected(editItem);
+                                clipboardHelper.timeoutCopyToClipboard(mEntry.getUsername(),
+                                        getString(R.string.copy_field, getString(R.string.entry_user_name)));
                             }
 
                             @Override
                             public void onOuterCircleClick(TapTargetView view) {
                                 super.onOuterCircleClick(view);
                                 view.dismiss(false);
-                                // Open Keepass doc to create field references
-                                Intent browserIntent = new Intent(Intent.ACTION_VIEW,
-                                        Uri.parse(getString(R.string.field_references_url)));
-                                startActivity(browserIntent);
+                                // Launch autofill settings
+                                startActivity(new Intent(EntryActivity.this, SettingsAutofillActivity.class));
                             }
                         });
                 PreferencesUtil.saveEducationPreference(this,
-                        R.string.education_entry_edit_key);
-            } catch (Exception e) {
-                // If icon not visible
-                Log.w(TAG, "Can't performed education for entry's edition");
+                        R.string.education_copy_username_key);
+
+            } else if (!PreferencesUtil.isEducationEntryEditPerformed(this)) {
+
+                try {
+                    TapTargetView.showFor(this,
+                            TapTarget.forToolbarMenuItem(toolbar, R.id.menu_edit,
+                                    getString(R.string.education_entry_edit_title),
+                                    getString(R.string.education_entry_edit_summary))
+                                    .textColorInt(Color.WHITE)
+                                    .tintTarget(true)
+                                    .cancelable(true),
+                            new TapTargetView.Listener() {
+                                @Override
+                                public void onTargetClick(TapTargetView view) {
+                                    super.onTargetClick(view);
+                                    MenuItem editItem = menu.findItem(R.id.menu_edit);
+                                    onOptionsItemSelected(editItem);
+                                }
+
+                                @Override
+                                public void onOuterCircleClick(TapTargetView view) {
+                                    super.onOuterCircleClick(view);
+                                    view.dismiss(false);
+                                    // Open Keepass doc to create field references
+                                    Intent browserIntent = new Intent(Intent.ACTION_VIEW,
+                                            Uri.parse(getString(R.string.field_references_url)));
+                                    startActivity(browserIntent);
+                                }
+                            });
+                    PreferencesUtil.saveEducationPreference(this,
+                            R.string.education_entry_edit_key);
+                } catch (Exception e) {
+                    // If icon not visible
+                    Log.w(TAG, "Can't performed education for entry's edition");
+                }
             }
         }
     }
@@ -288,18 +318,10 @@ public class EntryActivity extends LockingHideActivity {
 		mEntry.startToManageFieldReferences(pm);
 
         // Assign title icon
-        if (IconPackChooser.getSelectedIconPack(this).tintable()) {
-            // Retrieve the textColor to tint the icon
-            int[] attrs = {R.attr.textColorInverse};
-            TypedArray ta = getTheme().obtainStyledAttributes(attrs);
-            int iconColor = ta.getColor(0, Color.WHITE);
-            App.getDB().getDrawFactory().assignDatabaseIconTo(this, titleIconView,  mEntry.getIcon(), true, iconColor);
-        } else {
-            App.getDB().getDrawFactory().assignDatabaseIconTo(this, titleIconView,  mEntry.getIcon());
-        }
+        db.getDrawFactory().assignDatabaseIconTo(this, titleIconView, mEntry.getIcon(), iconColor);
 
 		// Assign title text
-        titleView.setText(mEntry.getTitle());
+        titleView.setText(mEntry.getVisualTitle());
 
         // Assign basic fields
         entryContentsView.assignUserName(mEntry.getUsername());
@@ -308,12 +330,39 @@ public class EntryActivity extends LockingHideActivity {
                 getString(R.string.copy_field, getString(R.string.entry_user_name)))
         );
 
-		entryContentsView.assignPassword(mEntry.getPassword());
-		if (PreferencesUtil.allowCopyPassword(this)) {
+        boolean allowCopyPassword = PreferencesUtil.allowCopyPasswordAndProtectedFields(this);
+		entryContentsView.assignPassword(mEntry.getPassword(), allowCopyPassword);
+		if (allowCopyPassword) {
             entryContentsView.assignPasswordCopyListener(view ->
                     clipboardHelper.timeoutCopyToClipboard(mEntry.getPassword(),
                             getString(R.string.copy_field, getString(R.string.entry_password)))
             );
+        } else {
+		    // If dialog not already shown
+            if (isFirstTimeAskAllowCopyPasswordAndProtectedFields(this)) {
+                entryContentsView.assignPasswordCopyListener(v -> {
+                    String message = getString(R.string.allow_copy_password_warning) +
+                            "\n\n" +
+                            getString(R.string.clipboard_warning);
+                    AlertDialog warningDialog = new AlertDialog.Builder(EntryActivity.this)
+                            .setMessage(message).create();
+                    warningDialog.setButton(AlertDialog.BUTTON1, getText(android.R.string.ok),
+                            (dialog, which) -> {
+                                PreferencesUtil.setAllowCopyPasswordAndProtectedFields(EntryActivity.this, true);
+                                dialog.dismiss();
+                                fillData();
+                            });
+                    warningDialog.setButton(AlertDialog.BUTTON2, getText(android.R.string.cancel),
+                            (dialog, which) -> {
+                                PreferencesUtil.setAllowCopyPasswordAndProtectedFields(EntryActivity.this, false);
+                                dialog.dismiss();
+                                fillData();
+                            });
+                    warningDialog.show();
+                });
+            } else {
+                entryContentsView.assignPasswordCopyListener(null);
+            }
         }
 
         entryContentsView.assignURL(mEntry.getUrl());
@@ -325,14 +374,15 @@ public class EntryActivity extends LockingHideActivity {
 		if (mEntry.allowExtraFields()) {
 			entryContentsView.clearExtraFields();
 
-			mEntry.getFields().doActionToAllCustomProtectedField((label, value) ->
-
-                    entryContentsView.addExtraField(label, value, view ->
+			mEntry.getFields().doActionToAllCustomProtectedField((label, value) -> {
+			        boolean showAction = (!value.isProtected() || PreferencesUtil.allowCopyPasswordAndProtectedFields(EntryActivity.this));
+                    entryContentsView.addExtraField(label, value, showAction, view ->
                         clipboardHelper.timeoutCopyToClipboard(
                                 value.toString(),
                                 getString(R.string.copy_field, label)
                         )
-            ));
+                    );
+            });
 		}
 
         // Assign dates
@@ -346,7 +396,7 @@ public class EntryActivity extends LockingHideActivity {
             entryContentsView.assignExpiresDate(getString(R.string.never));
 		}
 
-        mEntry.endToManageFieldReferences();
+        mEntry.stopToManageFieldReferences();
 	}
 
 	@Override

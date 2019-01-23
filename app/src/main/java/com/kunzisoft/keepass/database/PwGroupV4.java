@@ -19,11 +19,15 @@
  */
 package com.kunzisoft.keepass.database;
 
+import android.os.Parcel;
+
+import com.kunzisoft.keepass.utils.MemUtil;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-public class PwGroupV4 extends PwGroup<PwGroupV4, PwGroupV4, PwEntryV4> implements ITimeLogger {
+public class PwGroupV4 extends PwGroup<PwGroupV4, PwEntryV4> implements ITimeLogger {
 
 	public static final boolean DEFAULT_SEARCHING_ENABLED = true;
 
@@ -32,9 +36,7 @@ public class PwGroupV4 extends PwGroup<PwGroupV4, PwGroupV4, PwEntryV4> implemen
     private long usageCount = 0;
     private PwDate parentGroupLastMod = new PwDate();
     private Map<String, String> customData = new HashMap<>();
-
     private boolean expires = false;
-
     private String notes = "";
 	private boolean isExpanded = true;
 	private String defaultAutoTypeSequence = "";
@@ -56,6 +58,53 @@ public class PwGroupV4 extends PwGroup<PwGroupV4, PwGroupV4, PwEntryV4> implemen
 		this.name = name;
 		this.icon = icon;
 	}
+
+    public PwGroupV4(Parcel in) {
+        super(in);
+        uuid = (UUID) in.readSerializable();
+        customIcon = in.readParcelable(PwIconCustom.class.getClassLoader());
+        usageCount = in.readLong();
+        parentGroupLastMod = in.readParcelable(PwDate.class.getClassLoader());
+        // TODO customData = MemUtil.readStringParcelableMap(in);
+        expires = in.readByte() != 0;
+        notes = in.readString();
+        isExpanded = in.readByte() != 0;
+        defaultAutoTypeSequence = in.readString();
+        byte autoTypeByte = in.readByte();
+        enableAutoType = (autoTypeByte == -1) ? null : autoTypeByte != 0;
+        byte enableSearchingByte = in.readByte();
+        enableSearching = (enableSearchingByte == -1) ? null : enableSearchingByte != 0;
+        lastTopVisibleEntry = (UUID) in.readSerializable();
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        super.writeToParcel(dest, flags);
+        dest.writeSerializable(uuid);
+        dest.writeParcelable(customIcon, flags);
+        dest.writeLong(usageCount);
+        dest.writeParcelable(parentGroupLastMod, flags);
+        // TODO MemUtil.writeStringParcelableMap(dest, customData);
+        dest.writeByte((byte) (expires ? 1 : 0));
+        dest.writeString(notes);
+        dest.writeByte((byte) (isExpanded ? 1 : 0));
+        dest.writeString(defaultAutoTypeSequence);
+        dest.writeByte((byte) (enableAutoType == null ? -1 : (enableAutoType ? 1 : 0)));
+        dest.writeByte((byte) (enableAutoType == null ? -1 : (enableAutoType ? 1 : 0)));
+        dest.writeSerializable(lastTopVisibleEntry);
+    }
+
+    public static final Creator<PwGroupV4> CREATOR = new Creator<PwGroupV4>() {
+        @Override
+        public PwGroupV4 createFromParcel(Parcel in) {
+            return new PwGroupV4(in);
+        }
+
+        @Override
+        public PwGroupV4[] newArray(int size) {
+            return new PwGroupV4[size];
+        }
+    };
 
     protected void updateWith(PwGroupV4 source) {
         super.assign(source);
@@ -120,14 +169,6 @@ public class PwGroupV4 extends PwGroup<PwGroupV4, PwGroupV4, PwEntryV4> implemen
         this.uuid = uuid;
     }
 
-    public PwIconCustom getCustomIcon() {
-        return customIcon;
-    }
-
-    public void setCustomIcon(PwIconCustom icon) {
-        this.customIcon = icon;
-    }
-
 	@Override
 	public PwGroupId getId() {
 		return new PwGroupIdV4(uuid);
@@ -176,12 +217,25 @@ public class PwGroupV4 extends PwGroup<PwGroupV4, PwGroupV4, PwEntryV4> implemen
 
 	@Override
 	public PwIcon getIcon() {
-		if (customIcon == null || customIcon.uuid.equals(PwDatabase.UUID_ZERO)) {
+		if (customIcon == null || customIcon.getUUID().equals(PwDatabase.UUID_ZERO)) {
 			return super.getIcon();
 		} else {
 			return customIcon;
 		}
 	}
+
+    public PwIconCustom getIconCustom() {
+        return customIcon;
+    }
+
+    public void setIconCustom(PwIconCustom icon) {
+        this.customIcon = icon;
+    }
+
+    public void setIconStandard(PwIconStandard icon) { // TODO Encapsulate with PwEntryV4
+        this.icon = icon;
+        this.customIcon = PwIconCustom.ZERO;
+    }
 
     public void putCustomData(String key, String value) {
         customData.put(key, value);

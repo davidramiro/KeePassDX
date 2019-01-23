@@ -22,9 +22,11 @@ package com.kunzisoft.keepass.password;
 import android.Manifest;
 import android.app.Activity;
 import android.app.assist.AssistStructure;
+import android.app.backup.BackupManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.hardware.fingerprint.FingerprintManager;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
@@ -34,7 +36,6 @@ import android.preference.PreferenceManager;
 import android.support.annotation.NonNull;
 import android.support.annotation.RequiresApi;
 import android.support.v4.content.ContextCompat;
-import android.support.v4.hardware.fingerprint.FingerprintManagerCompat;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.widget.Toolbar;
 import android.text.Editable;
@@ -55,20 +56,21 @@ import com.getkeepsafe.taptargetview.TapTarget;
 import com.getkeepsafe.taptargetview.TapTargetView;
 import com.kunzisoft.keepass.R;
 import com.kunzisoft.keepass.activities.GroupActivity;
-import com.kunzisoft.keepass.activities.LockingActivity;
+import com.kunzisoft.keepass.activities.IntentBuildLauncher;
+import com.kunzisoft.keepass.activities.ReadOnlyHelper;
 import com.kunzisoft.keepass.app.App;
 import com.kunzisoft.keepass.autofill.AutofillHelper;
-import com.kunzisoft.keepass.compat.BackupManagerCompat;
 import com.kunzisoft.keepass.compat.ClipDataCompat;
-import com.kunzisoft.keepass.compat.EditorCompat;
 import com.kunzisoft.keepass.database.Database;
-import com.kunzisoft.keepass.database.action.LoadDBRunnable;
+import com.kunzisoft.keepass.database.action.LoadDatabaseRunnable;
 import com.kunzisoft.keepass.database.action.OnFinishRunnable;
 import com.kunzisoft.keepass.dialogs.PasswordEncodingDialogHelper;
 import com.kunzisoft.keepass.fileselect.KeyFileHelper;
 import com.kunzisoft.keepass.fingerprint.FingerPrintAnimatedVector;
-import com.kunzisoft.keepass.fingerprint.FingerPrintDialog;
+import com.kunzisoft.keepass.fingerprint.FingerPrintExplanationDialog;
 import com.kunzisoft.keepass.fingerprint.FingerPrintHelper;
+import com.kunzisoft.keepass.lock.LockingActivity;
+import com.kunzisoft.keepass.selection.EntrySelectionHelper;
 import com.kunzisoft.keepass.settings.PreferencesUtil;
 import com.kunzisoft.keepass.stylish.StylishActivity;
 import com.kunzisoft.keepass.tasks.ProgressTaskDialogFragment;
@@ -122,12 +124,16 @@ public class PasswordActivity extends StylishActivity
     private CompoundButton checkboxPasswordView;
     private CompoundButton checkboxKeyfileView;
     private CompoundButton checkboxDefaultDatabaseView;
+    private CompoundButton.OnCheckedChangeListener enableButtonOncheckedChangeListener;
+
+    private boolean readOnly;
 
     private DefaultCheckChange defaultCheckChange;
     private ValidateButtonViewClickListener validateButtonViewClickListener;
 
     private KeyFileHelper keyFileHelper;
 
+    protected boolean entrySelectionMode;
     private AutofillHelper autofillHelper;
 
     public static void launch(
@@ -137,42 +143,67 @@ public class PasswordActivity extends StylishActivity
     }
 
     public static void launch(
-            Activity act,
+            Activity activity,
             String fileName,
             String keyFile) throws FileNotFoundException {
         verifyFileNameUriFromLaunch(fileName);
 
-        Intent intent = new Intent(act, PasswordActivity.class);
+        buildAndLaunchIntent(activity, fileName, keyFile, (intent) -> {
+            // only to avoid visible  flickering when redirecting
+            activity.startActivityForResult(intent, RESULT_CANCELED);
+        });
+    }
+
+    private static void buildAndLaunchIntent(Activity activity, String fileName, String keyFile,
+                                             IntentBuildLauncher intentBuildLauncher) {
+        Intent intent = new Intent(activity, PasswordActivity.class);
         intent.putExtra(UriIntentInitTask.KEY_FILENAME, fileName);
         intent.putExtra(UriIntentInitTask.KEY_KEYFILE, keyFile);
-        // only to avoid visible  flickering when redirecting
-        act.startActivityForResult(intent, 0);
+        intentBuildLauncher.startActivityForResult(intent);
+    }
+
+    public static void launchForKeyboardResult(
+            Activity act,
+            String fileName) throws FileNotFoundException {
+        launchForKeyboardResult(act, fileName, "");
+    }
+
+    public static void launchForKeyboardResult(
+            Activity activity,
+            String fileName,
+            String keyFile) throws FileNotFoundException {
+        verifyFileNameUriFromLaunch(fileName);
+
+        buildAndLaunchIntent(activity, fileName, keyFile, (intent) -> {
+            EntrySelectionHelper.addEntrySelectionModeExtraInIntent(intent);
+            // only to avoid visible  flickering when redirecting
+            activity.startActivityForResult(intent, EntrySelectionHelper.ENTRY_SELECTION_RESPONSE_REQUEST_CODE);
+        });
     }
 
     @RequiresApi(api = Build.VERSION_CODES.O)
-    public static void launch(
+    public static void launchForAutofillResult(
             Activity act,
             String fileName,
             AssistStructure assistStructure) throws FileNotFoundException {
-        launch(act, fileName, "", assistStructure);
+        launchForAutofillResult(act, fileName, "", assistStructure);
     }
 
     @RequiresApi(api = Build.VERSION_CODES.O)
-    public static void launch(
-            Activity act,
+    public static void launchForAutofillResult(
+            Activity activity,
             String fileName,
             String keyFile,
             AssistStructure assistStructure) throws FileNotFoundException {
         verifyFileNameUriFromLaunch(fileName);
 
         if ( assistStructure != null ) {
-            Intent intent = new Intent(act, PasswordActivity.class);
-            intent.putExtra(UriIntentInitTask.KEY_FILENAME, fileName);
-            intent.putExtra(UriIntentInitTask.KEY_KEYFILE, keyFile);
-            AutofillHelper.addAssistStructureExtraInIntent(intent, assistStructure);
-            act.startActivityForResult(intent, AutofillHelper.AUTOFILL_RESPONSE_REQUEST_CODE);
+            buildAndLaunchIntent(activity, fileName, keyFile, (intent) -> {
+                AutofillHelper.addAssistStructureExtraInIntent(intent, assistStructure);
+                activity.startActivityForResult(intent, AutofillHelper.AUTOFILL_RESPONSE_REQUEST_CODE);
+            });
         } else {
-            launch(act, fileName, keyFile);
+            launch(activity, fileName, keyFile);
         }
     }
 
@@ -200,6 +231,8 @@ public class PasswordActivity extends StylishActivity
             Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
+        // To get entry in result
+        EntrySelectionHelper.onActivityResultSetResultAndFinish(this, requestCode, resultCode, data);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             AutofillHelper.onActivityResultSetResultAndFinish(this, requestCode, resultCode, data);
         }
@@ -219,7 +252,7 @@ public class PasswordActivity extends StylishActivity
                 case LockingActivity.RESULT_EXIT_LOCK:
                 case Activity.RESULT_CANCELED:
                     setEmptyViews();
-                    App.getDB().clear();
+                    App.getDB().clear(getApplicationContext());
                     break;
             }
         }
@@ -251,6 +284,8 @@ public class PasswordActivity extends StylishActivity
         checkboxPasswordView = findViewById(R.id.password_checkbox);
         checkboxKeyfileView = findViewById(R.id.keyfile_checkox);
         checkboxDefaultDatabaseView = findViewById(R.id.default_database);
+
+        readOnly = ReadOnlyHelper.retrieveReadOnlyFromInstanceStateOrPreference(this, savedInstanceState);
 
         View browseView = findViewById(R.id.browse_button);
         keyFileHelper = new KeyFileHelper(PasswordActivity.this);
@@ -296,12 +331,12 @@ public class PasswordActivity extends StylishActivity
                     fingerprintImageView);
         }
 
+        entrySelectionMode = EntrySelectionHelper.isIntentInEntrySelectionMode(getIntent());
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             autofillHelper = new AutofillHelper();
             autofillHelper.retrieveAssistStructure(getIntent());
         }
-
-        checkAndPerformedEducation();
     }
 
     @Override
@@ -323,6 +358,18 @@ public class PasswordActivity extends StylishActivity
         // For check shutdown
         super.onResume();
 
+        // Enable or not the open button
+        if (!PreferencesUtil.emptyPasswordAllowed(PasswordActivity.this)) {
+            confirmButtonView.setEnabled(checkboxPasswordView.isChecked());
+        } else {
+            confirmButtonView.setEnabled(true);
+        }
+        enableButtonOncheckedChangeListener = (buttonView, isChecked) -> {
+            if (!PreferencesUtil.emptyPasswordAllowed(PasswordActivity.this)) {
+                confirmButtonView.setEnabled(isChecked);
+            }
+        };
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             // Check if fingerprint well init (be called the first time the fingerprint is configured
             // and the activity still active)
@@ -334,45 +381,96 @@ public class PasswordActivity extends StylishActivity
             if (fingerPrintAnimatedVector != null) {
                 fingerPrintAnimatedVector.startScan();
             }
+        } else {
+            checkboxPasswordView.setOnCheckedChangeListener(enableButtonOncheckedChangeListener);
         }
 
         new UriIntentInitTask(this, mRememberKeyfile)
                 .execute(getIntent());
     }
 
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        ReadOnlyHelper.onSaveInstanceState(outState, readOnly);
+        super.onSaveInstanceState(outState);
+    }
+
     /**
      * Check and display learning views
      * Displays the explanation for a database opening with fingerprints if available
      */
-    private void checkAndPerformedEducation() {
-        if (!PreferencesUtil.isEducationUnlockPerformed(this)) {
+    private void checkAndPerformedEducation(Menu menu) {
+        if (PreferencesUtil.isEducationScreensEnabled(this)) {
 
-            TapTargetView.showFor(this,
-                    TapTarget.forView(findViewById(R.id.password_input_container),
-                    getString(R.string.education_unlock_title),
-                    getString(R.string.education_unlock_summary))
-                            .dimColor(R.color.green)
-                            .icon(ContextCompat.getDrawable(this, R.mipmap.ic_launcher_round))
-                            .textColorInt(Color.WHITE)
-                            .tintTarget(false)
-                            .cancelable(true),
-                    new TapTargetView.Listener() {
-                        @Override
-                        public void onTargetClick(TapTargetView view) {
-                            super.onTargetClick(view);
-                            checkAndPerformedEducationForFingerprint();
-                        }
+            if (!PreferencesUtil.isEducationUnlockPerformed(this)) {
 
-                        @Override
-                        public void onOuterCircleClick(TapTargetView view) {
-                            super.onOuterCircleClick(view);
-                            view.dismiss(false);
-                            checkAndPerformedEducationForFingerprint();
+                TapTargetView.showFor(this,
+                        TapTarget.forView(findViewById(R.id.password_input_container),
+                                getString(R.string.education_unlock_title),
+                                getString(R.string.education_unlock_summary))
+                                .dimColor(R.color.green)
+                                .icon(ContextCompat.getDrawable(getApplicationContext(), R.mipmap.ic_launcher_round))
+                                .textColorInt(Color.WHITE)
+                                .tintTarget(false)
+                                .cancelable(true),
+                        new TapTargetView.Listener() {
+                            @Override
+                            public void onTargetClick(TapTargetView view) {
+                                super.onTargetClick(view);
+                                performedReadOnlyEducation(menu);
+                            }
 
-                        }
-                    });
-            // TODO make a period for donation
-            PreferencesUtil.saveEducationPreference(PasswordActivity.this, R.string.education_unlock_key);
+                            @Override
+                            public void onOuterCircleClick(TapTargetView view) {
+                                super.onOuterCircleClick(view);
+                                view.dismiss(false);
+                                performedReadOnlyEducation(menu);
+
+                            }
+                        });
+                // TODO make a period for donation
+                PreferencesUtil.saveEducationPreference(PasswordActivity.this,
+                        R.string.education_unlock_key);
+            }
+        }
+    }
+
+    /**
+     * Check and display learning views
+     * Displays read-only if available
+     */
+    private void performedReadOnlyEducation(Menu menu) {
+        if (!PreferencesUtil.isEducationReadOnlyPerformed(this)) {
+            try {
+                TapTargetView.showFor(this,
+                        TapTarget.forToolbarMenuItem(toolbar, R.id.menu_open_file_read_mode_key,
+                                getString(R.string.education_read_only_title),
+                                getString(R.string.education_read_only_summary))
+                                .textColorInt(Color.WHITE)
+                                .tintTarget(true)
+                                .cancelable(true),
+                        new TapTargetView.Listener() {
+                            @Override
+                            public void onTargetClick(TapTargetView view) {
+                                super.onTargetClick(view);
+                                MenuItem editItem = menu.findItem(R.id.menu_open_file_read_mode_key);
+                                onOptionsItemSelected(editItem);
+                                checkAndPerformedEducationForFingerprint();
+                            }
+
+                            @Override
+                            public void onOuterCircleClick(TapTargetView view) {
+                                super.onOuterCircleClick(view);
+                                view.dismiss(false);
+                                checkAndPerformedEducationForFingerprint();
+                            }
+                        });
+                PreferencesUtil.saveEducationPreference(this,
+                        R.string.education_read_only_key);
+            } catch (Exception e) {
+                // If icon not visible
+                Log.w(TAG, "Can't performed education for entry's edition");
+            }
         }
     }
 
@@ -381,14 +479,18 @@ public class PasswordActivity extends StylishActivity
      * Displays fingerprints if available
      */
     private void checkAndPerformedEducationForFingerprint() {
-        if (PreferencesUtil.isFingerprintEnable(getApplicationContext())) {
-            TapTargetView.showFor(this,
-                TapTarget.forView(fingerprintImageView,
-                        getString(R.string.education_fingerprint_title),
-                        getString(R.string.education_fingerprint_summary))
-                        .textColorInt(Color.WHITE)
-                        .tintTarget(false)
-                        .cancelable(true),
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+
+            if ( PreferencesUtil.isFingerprintEnable(getApplicationContext())
+                    && FingerPrintHelper.isFingerprintSupported(getSystemService(FingerprintManager.class))) {
+
+                TapTargetView.showFor(this,
+                    TapTarget.forView(fingerprintImageView,
+                            getString(R.string.education_fingerprint_title),
+                            getString(R.string.education_fingerprint_summary))
+                            .textColorInt(Color.WHITE)
+                            .tintTarget(false)
+                            .cancelable(true),
                     new TapTargetView.Listener() {
                         @Override
                         public void onOuterCircleClick(TapTargetView view) {
@@ -396,6 +498,7 @@ public class PasswordActivity extends StylishActivity
                             view.dismiss(false);
                         }
                     });
+            }
         }
     }
 
@@ -512,10 +615,14 @@ public class PasswordActivity extends StylishActivity
                     }
                 }
             }
+
+            // Add old listener to enable the button, only be call here because of onCheckedChange bug
+            if (enableButtonOncheckedChangeListener != null)
+                enableButtonOncheckedChangeListener.onCheckedChanged(compoundButton, checked);
         });
 
         // callback for fingerprint findings
-        fingerPrintHelper.setAuthenticationCallback(new FingerprintManagerCompat.AuthenticationCallback() {
+        fingerPrintHelper.setAuthenticationCallback(new FingerprintManager.AuthenticationCallback() {
             @Override
             public void onAuthenticationError(
                     final int errorCode,
@@ -547,7 +654,7 @@ public class PasswordActivity extends StylishActivity
             }
 
             @Override
-            public void onAuthenticationSucceeded(final FingerprintManagerCompat.AuthenticationResult result) {
+            public void onAuthenticationSucceeded(final FingerprintManager.AuthenticationResult result) {
                 switch (fingerPrintMode) {
                     case STORE_MODE:
                         // newly store the entered password in encrypted way
@@ -678,14 +785,14 @@ public class PasswordActivity extends StylishActivity
         // fingerprint not supported (by API level or hardware) so keep option hidden
         // or manually disable
         if (!PreferencesUtil .isFingerprintEnable(getApplicationContext())
-                || !FingerPrintHelper.isFingerprintSupported(FingerprintManagerCompat.from(this))) {
+                || !FingerPrintHelper.isFingerprintSupported(getSystemService(FingerprintManager.class))) {
             setFingerPrintVisibility(View.GONE);
         }
         // fingerprint is available but not configured show icon but in disabled state with some information
         else {
             // show explanations
             fingerprintContainerView.setOnClickListener(view -> {
-                FingerPrintDialog fingerPrintDialog = new FingerPrintDialog();
+                FingerPrintExplanationDialog fingerPrintDialog = new FingerPrintExplanationDialog();
                 fingerPrintDialog.show(getSupportFragmentManager(), "fingerprintDialog");
             });
             setFingerPrintVisibility(View.VISIBLE);
@@ -790,9 +897,9 @@ public class PasswordActivity extends StylishActivity
 
             SharedPreferences.Editor editor = prefs.edit();
             editor.putString(KEY_DEFAULT_FILENAME, newDefaultFileName);
-            EditorCompat.apply(editor);
+            editor.apply();
 
-            BackupManagerCompat backupManager = new BackupManagerCompat(PasswordActivity.this);
+            BackupManager backupManager = new BackupManager(PasswordActivity.this);
             backupManager.dataChanged();
         }
     }
@@ -831,16 +938,16 @@ public class PasswordActivity extends StylishActivity
     private void loadDatabase(String password, Uri keyfile) {
         // Clear before we load
         Database database = App.getDB();
-        database.clear();
+        database.clear(getApplicationContext());
         // Clear the shutdown flag
         App.clearShutdown();
 
         // Show the progress dialog
         Handler handler = new Handler();
         AfterLoadingDatabase afterLoad = new AfterLoadingDatabase(handler, database);
-        LoadDBRunnable databaseLoadingTask = new LoadDBRunnable(
-                database,
+        LoadDatabaseRunnable databaseLoadingTask = new LoadDatabaseRunnable(
                 PasswordActivity.this,
+                database,
                 mDbUri,
                 password,
                 keyfile,
@@ -852,8 +959,7 @@ public class PasswordActivity extends StylishActivity
                                 getSupportFragmentManager(),
                                 R.string.loading_database)
                 ));
-        Thread t = new Thread(databaseLoadingTask);
-        t.start();
+        new Thread(databaseLoadingTask).start();
     }
 
     /**
@@ -902,25 +1008,48 @@ public class PasswordActivity extends StylishActivity
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             assistStructure = autofillHelper.getAssistStructure();
             if (assistStructure != null) {
-                GroupActivity.launch(PasswordActivity.this, assistStructure);
+                GroupActivity.launchForAutofillResult(PasswordActivity.this, assistStructure, readOnly);
             }
         }
         if (assistStructure == null) {
-            GroupActivity.launch(PasswordActivity.this);
+            if (entrySelectionMode) {
+                GroupActivity.launchForKeyboardResult(PasswordActivity.this, readOnly);
+            } else {
+                GroupActivity.launch(PasswordActivity.this, readOnly);
+            }
         }
     }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         MenuInflater inflater = getMenuInflater();
+        // Read menu
+        inflater.inflate(R.menu.open_file, menu);
+        changeOpenFileReadIcon(menu.findItem(R.id.menu_open_file_read_mode_key));
+
         MenuUtil.defaultMenuInflater(inflater, menu);
+
+        // Fingerprint menu
         if (!fingerprintMustBeConfigured
                 && prefsNoBackup.contains(getPreferenceKeyValue()) )
             inflater.inflate(R.menu.fingerprint, menu);
 
         super.onCreateOptionsMenu(menu);
 
+        // Show education views
+        new Handler().post(() -> checkAndPerformedEducation(menu));
+
         return true;
+    }
+
+    private void changeOpenFileReadIcon(MenuItem togglePassword) {
+        if ( readOnly ) {
+            togglePassword.setTitle(R.string.menu_file_selection_read_only);
+            togglePassword.setIcon(R.drawable.ic_read_only_white_24dp);
+        } else {
+            togglePassword.setTitle(R.string.menu_open_file_read_and_write);
+            togglePassword.setIcon(R.drawable.ic_read_write_white_24dp);
+        }
     }
 
     @Override
@@ -929,6 +1058,10 @@ public class PasswordActivity extends StylishActivity
         switch (item.getItemId()) {
             case android.R.id.home:
                 finish();
+                break;
+            case R.id.menu_open_file_read_mode_key:
+                readOnly = !readOnly;
+                changeOpenFileReadIcon(item);
                 break;
             case R.id.menu_fingerprint_remove_key:
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

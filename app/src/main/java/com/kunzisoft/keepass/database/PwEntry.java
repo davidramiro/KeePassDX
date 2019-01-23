@@ -19,6 +19,8 @@
  */
 package com.kunzisoft.keepass.database;
 
+import android.os.Parcel;
+
 import com.kunzisoft.keepass.database.iterator.EntrySearchStringIterator;
 import com.kunzisoft.keepass.database.security.ProtectedString;
 
@@ -29,6 +31,19 @@ public abstract class PwEntry<Parent extends PwGroup> extends PwNode<Parent> {
 	private static final String PMS_TAN_ENTRY = "<TAN>";
 
 	protected UUID uuid = PwDatabase.UUID_ZERO;
+
+	public PwEntry() {}
+
+	public PwEntry(Parcel in) {
+		super(in);
+		uuid = (UUID) in.readSerializable();
+	}
+
+	@Override
+	public void writeToParcel(Parcel dest, int flags) {
+		super.writeToParcel(dest, flags);
+		dest.writeSerializable(uuid);
+	}
 
 	@Override
 	protected void construct(Parent parent) {
@@ -61,7 +76,7 @@ public abstract class PwEntry<Parent extends PwGroup> extends PwNode<Parent> {
     }
 
 	public void startToManageFieldReferences(PwDatabase db) {}
-	public void endToManageFieldReferences() {}
+	public void stopToManageFieldReferences() {}
 
 	public abstract String getTitle();
     public abstract void setTitle(String title);
@@ -82,14 +97,30 @@ public abstract class PwEntry<Parent extends PwGroup> extends PwNode<Parent> {
 		return getTitle().equals(PMS_TAN_ENTRY) && (getUsername().length() > 0);
 	}
 
-	@Override
-	public String getDisplayTitle() {
-		if ( isTan() ) {
-			return PMS_TAN_ENTRY + " " + getUsername();
-		} else {
-			return getTitle();
-		}
+    /**
+     * {@inheritDoc}
+     * Get the display title from an entry, <br />
+     * {@link #startToManageFieldReferences(PwDatabase)} and {@link #stopToManageFieldReferences()} must be called
+     * before and after {@link #getVisualTitle()}
+     */
+	public String getVisualTitle() {
+	    // only used to compare, don't car if it's a reference
+	    return getVisualTitle(isTan(), getTitle(), getUsername(), getUrl(), getUUID());
 	}
+
+	public static String getVisualTitle(boolean isTAN, String title, String username, String url, UUID uuid) {
+        if ( isTAN ) {
+            return PMS_TAN_ENTRY + " " + username;
+        } else {
+            if (title.isEmpty())
+                if (url.isEmpty())
+                    return uuid.toString();
+                else
+                    return url;
+            else
+                return title;
+        }
+    }
 
 	// TODO encapsulate extra fields
 
@@ -115,6 +146,22 @@ public abstract class PwEntry<Parent extends PwGroup> extends PwNode<Parent> {
 	 */
 	public boolean containsCustomFields() {
 		return getFields().containsCustomFields();
+	}
+
+	/**
+	 * If entry contains extra fields that are protected
+	 * @return true if there is extra fields protected
+	 */
+	public boolean containsCustomFieldsProtected() {
+		return getFields().containsCustomFieldsProtected();
+	}
+
+	/**
+	 * If entry contains extra fields that are not protected
+	 * @return true if there is extra fields not protected
+	 */
+	public boolean containsCustomFieldsNotProtected() {
+		return getFields().containsCustomFieldsNotProtected();
 	}
 
     /**

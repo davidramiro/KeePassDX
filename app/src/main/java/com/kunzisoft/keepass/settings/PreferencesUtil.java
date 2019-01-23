@@ -22,6 +22,7 @@ package com.kunzisoft.keepass.settings;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.preference.PreferenceManager;
+import android.util.TypedValue;
 
 import com.kunzisoft.keepass.R;
 import com.kunzisoft.keepass.database.SortNodeEnum;
@@ -54,9 +55,22 @@ public class PreferencesUtil {
         sharedPreferencesEditor.apply();
     }
 
+    public static boolean showUsernamesListEntries(Context context) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        return prefs.getBoolean(context.getString(R.string.list_entries_show_username_key),
+                context.getResources().getBoolean(R.bool.list_entries_show_username_default));
+    }
+
+    /**
+     * Retrieve the text size in SP, verify the integrity of the size stored in preference
+     */
 	public static float getListTextSize(Context ctx) {
-		SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
-		return Float.parseFloat(prefs.getString(ctx.getString(R.string.list_size_key), ctx.getString(R.string.list_size_default)));
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
+        String defaultSizeString = ctx.getString(R.string.list_size_default);
+        String listSize = prefs.getString(ctx.getString(R.string.list_size_key), defaultSizeString);
+        if (!Arrays.asList(ctx.getResources().getStringArray(R.array.list_size_values)).contains(listSize))
+            listSize = defaultSizeString;
+        return Float.parseFloat(listSize);
 	}
 
     public static int getDefaultPasswordLength(Context ctx) {
@@ -139,10 +153,24 @@ public class PreferencesUtil {
                 ctx.getResources().getBoolean(R.bool.auto_open_file_uri_default));
     }
 
-    public static boolean allowCopyPassword(Context ctx) {
+    public static boolean isFirstTimeAskAllowCopyPasswordAndProtectedFields(Context ctx) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
+        return prefs.getBoolean(ctx.getString(R.string.allow_copy_password_first_time_key),
+                ctx.getResources().getBoolean(R.bool.allow_copy_password_first_time_default));
+    }
+
+    public static boolean allowCopyPasswordAndProtectedFields(Context ctx) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
         return prefs.getBoolean(ctx.getString(R.string.allow_copy_password_key),
                 ctx.getResources().getBoolean(R.bool.allow_copy_password_default));
+    }
+
+    public static void setAllowCopyPasswordAndProtectedFields(Context ctx, boolean allowCopy) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
+        prefs.edit()
+                .putBoolean(ctx.getString(R.string.allow_copy_password_first_time_key), false)
+                .putBoolean(ctx.getString(R.string.allow_copy_password_key), allowCopy)
+                .apply();
     }
 
     public static String getIconPackSelectedId(Context context) {
@@ -150,6 +178,18 @@ public class PreferencesUtil {
         return prefs.getString(
                 context.getString(R.string.setting_icon_pack_choose_key),
                 context.getString(R.string.setting_icon_pack_choose_default));
+    }
+
+    public static boolean emptyPasswordAllowed(Context context) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        return prefs.getBoolean(context.getString(R.string.allow_no_password_key),
+                context.getResources().getBoolean(R.bool.allow_no_password_default));
+    }
+
+    public static boolean enableReadOnlyDatabase(Context context) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        return prefs.getBoolean(context.getString(R.string.enable_read_only_key),
+                context.getResources().getBoolean(R.bool.enable_read_only_default));
     }
 
     /**
@@ -160,6 +200,7 @@ public class PreferencesUtil {
             R.string.education_select_db_key,
             R.string.education_open_link_db_key,
             R.string.education_unlock_key,
+            R.string.education_read_only_key,
             R.string.education_search_key,
             R.string.education_new_node_key,
             R.string.education_sort_key,
@@ -169,6 +210,12 @@ public class PreferencesUtil {
             R.string.education_password_generator_key,
             R.string.education_entry_new_field_key
     };
+
+    public static boolean isEducationScreensEnabled(Context context) {
+        SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
+        return sharedPreferences.getBoolean(context.getString(R.string.enable_education_screens_key),
+                context.getResources().getBoolean(R.bool.enable_education_screens_default));
+    }
 
     /**
      * Register education preferences as true in EDUCATION_PREFERENCE SharedPreferences
@@ -231,6 +278,18 @@ public class PreferencesUtil {
         SharedPreferences prefs = getEducationSharedPreferences(context);
         return prefs.getBoolean(context.getString(R.string.education_unlock_key),
                 context.getResources().getBoolean(R.bool.education_unlock_default));
+    }
+
+    /**
+     * Determines whether the explanatory view of the database read-only has already been displayed.
+     *
+     * @param context The context to open the SharedPreferences
+     * @return boolean value of education_read_only_key key
+     */
+    public static boolean isEducationReadOnlyPerformed(Context context) {
+        SharedPreferences prefs = getEducationSharedPreferences(context);
+        return prefs.getBoolean(context.getString(R.string.education_read_only_key),
+                context.getResources().getBoolean(R.bool.education_read_only_default));
     }
 
     /**

@@ -47,8 +47,6 @@ package com.kunzisoft.keepass.database;
 
 import com.kunzisoft.keepass.crypto.finalkey.FinalKey;
 import com.kunzisoft.keepass.crypto.finalkey.FinalKeyFactory;
-import com.kunzisoft.keepass.crypto.keyDerivation.KdfEngine;
-import com.kunzisoft.keepass.crypto.keyDerivation.KdfFactory;
 import com.kunzisoft.keepass.database.exception.InvalidKeyFileException;
 import com.kunzisoft.keepass.stream.NullOutputStream;
 
@@ -93,7 +91,7 @@ public class PwDatabaseV3 extends PwDatabase<PwGroupV3, PwEntryV3> {
         PwGroupV3 group = createGroup();
         group.setId(newGroupId());
         group.setName(name);
-        group.setIcon(iconFactory.getIcon(iconId));
+        group.setIconStandard(iconFactory.getIcon(iconId));
         addGroupTo(group, parent);
     }
 
@@ -101,11 +99,6 @@ public class PwDatabaseV3 extends PwDatabase<PwGroupV3, PwEntryV3> {
 	public PwVersion getVersion() {
 		return PwVersion.V3;
 	}
-
-    @Override
-    public KdfEngine getKdfEngine() {
-        return KdfFactory.aesKdf;
-    }
 
 	@Override
 	public List<PwEncryptionAlgorithm> getAvailableEncryptionAlgorithms() {
@@ -183,7 +176,7 @@ public class PwDatabaseV3 extends PwDatabase<PwGroupV3, PwEntryV3> {
 		 */
 		for (int i = 0; i < entries.size(); i++) {
 			PwEntryV3 ent = entries.get(i);
-			if (ent.getGroupId() == parent.getGroupId())
+			if (ent.getParent().getGroupId() == parent.getGroupId())
 				kids.add(ent);
 		}
 		return kids;
@@ -383,4 +376,7 @@ public class PwDatabaseV3 extends PwDatabase<PwGroupV3, PwEntryV3> {
 		
 		return !(omitBackup && isBackup(group));
 	}
+
+	@Override
+	public void clearCache() {}
 }

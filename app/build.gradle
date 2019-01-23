@@ -2,22 +2,18 @@ apply plugin: 'com.android.application'
 
 android {
     compileSdkVersion 27
-    buildToolsVersion '27.0.3'
+    buildToolsVersion '28.0.2'
 
     defaultConfig {
         applicationId "com.kunzisoft.keepass"
         minSdkVersion 14
         targetSdkVersion 27
-        versionCode = 11
-        versionName = "2.5.0.0beta11"
+        versionCode = 18
+        versionName = "2.5.0.0beta18"
         multiDexEnabled true
 
         testApplicationId = "com.kunzisoft.keepass.tests"
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
-
-        ndk {
-            abiFilters 'x86', 'x86_64', 'armeabi-v7a', 'arm64-v8a'
-        }
 
         buildConfigField "String[]", "ICON_PACKS", "{\"classic\",\"material\"}"
     }
@@ -43,7 +39,7 @@ android {
     productFlavors {
         libre {
             applicationIdSuffix = ".libre"
-            versionNameSuffix "-libre"
+            buildConfigField "String", "BUILD_VERSION", "\"libre\""
             buildConfigField "boolean", "FULL_VERSION", "true"
             buildConfigField "boolean", "CLOSED_STORE", "false"
             buildConfigField "String[]", "STYLES_DISABLED", "{\"KeepassDXStyle_Dark\",\"KeepassDXStyle_Red\",\"KeepassDXStyle_Purple\"}"
@@ -52,7 +48,7 @@ android {
         }
         pro {
             applicationIdSuffix = ".pro"
-            versionNameSuffix "-pro"
+            buildConfigField "String", "BUILD_VERSION", "\"pro\""
             buildConfigField "boolean", "FULL_VERSION", "true"
             buildConfigField "boolean", "CLOSED_STORE", "true"
             buildConfigField "String[]", "STYLES_DISABLED", "{}"
@@ -60,7 +56,7 @@ android {
         }
         free {
             applicationIdSuffix = ".free"
-            versionNameSuffix "-free"
+            buildConfigField "String", "BUILD_VERSION", "\"free\""
             buildConfigField "boolean", "FULL_VERSION", "false"
             buildConfigField "boolean", "CLOSED_STORE", "true"
             buildConfigField "String[]", "STYLES_DISABLED", "{\"KeepassDXStyle_Dark\",\"KeepassDXStyle_Blue\",\"KeepassDXStyle_Red\",\"KeepassDXStyle_Purple\"}"
@@ -98,7 +94,7 @@ dependencies {
     implementation 'joda-time:joda-time:2.9.9'
     implementation 'org.sufficientlysecure:html-textview:3.5'
     implementation 'com.nononsenseapps:filepicker:4.1.0'
-    implementation 'com.getkeepsafe.taptargetview:taptargetview:1.11.0'
+    implementation 'com.getkeepsafe.taptargetview:taptargetview:1.12.0'
     // Permissions
     implementation("com.github.hotchemi:permissionsdispatcher:$permissionDispatcherVersion") {
         // if you don't use android.app.Fragment you can exclude support for them
@@ -107,11 +103,14 @@ dependencies {
     annotationProcessor "com.github.hotchemi:permissionsdispatcher-processor:$permissionDispatcherVersion"
     // Apache Commons Collections
     implementation 'commons-collections:commons-collections:3.2.1'
+    implementation 'org.apache.commons:commons-io:1.3.2'
     // Base64
     implementation 'biz.source_code:base64coder:2010-12-19'
-    implementation 'com.google.code.gson:gson:2.8.1'
+    // IO-Extras
+    implementation 'com.github.davidmoten:io-extras:0.1'
+    implementation 'com.google.code.gson:gson:2.8.4'
     implementation 'com.google.guava:guava:23.0-android'
-    // Icon pack, classic for all, material for libre and pro
+    // Icon pack
     implementation project(path: ':icon-pack-classic')
     implementation project(path: ':icon-pack-material')
 }

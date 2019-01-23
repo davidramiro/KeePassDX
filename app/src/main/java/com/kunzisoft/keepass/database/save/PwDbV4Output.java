@@ -19,6 +19,7 @@
  */
 package com.kunzisoft.keepass.database.save;
 
+import android.util.Log;
 import android.util.Xml;
 
 import com.kunzisoft.keepass.crypto.CipherFactory;
@@ -42,6 +43,7 @@ import com.kunzisoft.keepass.database.PwEntryV4;
 import com.kunzisoft.keepass.database.PwGroupV4;
 import com.kunzisoft.keepass.database.PwIconCustom;
 import com.kunzisoft.keepass.database.exception.PwDbOutputException;
+import com.kunzisoft.keepass.database.exception.UnknownKDF;
 import com.kunzisoft.keepass.database.security.ProtectedBinary;
 import com.kunzisoft.keepass.database.security.ProtectedString;
 import com.kunzisoft.keepass.stream.HashedBlockOutputStream;
@@ -74,6 +76,7 @@ import javax.crypto.CipherOutputStream;
 import biz.source_code.base64Coder.Base64Coder;
 
 public class PwDbV4Output extends PwDbOutput<PwDbHeaderV4> {
+    private static final String TAG = PwDbV4Output.class.getName();
 
 	private PwDatabaseV4 mPM;
 	private StreamCipher randomStream;
@@ -276,10 +279,8 @@ public class PwDbV4Output extends PwDbOutput<PwDbHeaderV4> {
 		} catch (Exception e) {
 			throw new PwDbOutputException("Invalid algorithm.", e);
 		}
-		
-		CipherOutputStream cos = new CipherOutputStream(os, cipher);
-		
-		return cos;
+
+        return new CipherOutputStream(os, cipher);
 	}
 
 	@Override
@@ -296,8 +297,13 @@ public class PwDbV4Output extends PwDbOutput<PwDbHeaderV4> {
 		if (mPM.getKdfParameters() == null) {
 			mPM.setKdfParameters(KdfFactory.aesKdf.getDefaultParameters());
 		}
-		KdfEngine kdf = KdfFactory.get(mPM.getKdfParameters());
-		kdf.randomize(mPM.getKdfParameters());
+
+		try {
+			KdfEngine kdf = KdfFactory.getEngineV4(mPM.getKdfParameters());
+			kdf.randomize(mPM.getKdfParameters());
+		} catch (UnknownKDF unknownKDF) {
+            Log.e(TAG, "Unable to retrieve header", unknownKDF);
+		}
 
 		if (header.getVersion() < PwDbHeaderV4.FILE_VERSION_32_4) {
 			header.innerRandomStream = CrsAlgorithm.Salsa20;
@@ -344,10 +350,10 @@ public class PwDbV4Output extends PwDbOutput<PwDbHeaderV4> {
 		writeObject(PwDatabaseV4XML.ElemUuid, group.getUUID());
 		writeObject(PwDatabaseV4XML.ElemName, group.getName());
 		writeObject(PwDatabaseV4XML.ElemNotes, group.getNotes());
-		writeObject(PwDatabaseV4XML.ElemIcon, group.getIconStandard().iconId);
+		writeObject(PwDatabaseV4XML.ElemIcon, group.getIconStandard().getIconId());
 		
-		if (!group.getCustomIcon().equals(PwIconCustom.ZERO)) {
-			writeObject(PwDatabaseV4XML.ElemCustomIconID, group.getCustomIcon().uuid);
+		if (!group.getIconCustom().equals(PwIconCustom.ZERO)) {
+			writeObject(PwDatabaseV4XML.ElemCustomIconID, group.getIconCustom().getUUID());
 		}
 		
 		writeList(PwDatabaseV4XML.ElemTimes, group);
@@ -369,10 +375,10 @@ public class PwDbV4Output extends PwDbOutput<PwDbHeaderV4> {
 		xml.startTag(null, PwDatabaseV4XML.ElemEntry);
 		
 		writeObject(PwDatabaseV4XML.ElemUuid, entry.getUUID());
-		writeObject(PwDatabaseV4XML.ElemIcon, entry.getIconStandard().iconId);
+		writeObject(PwDatabaseV4XML.ElemIcon, entry.getIconStandard().getIconId());
 		
-		if (!entry.getCustomIcon().equals(PwIconCustom.ZERO)) {
-			writeObject(PwDatabaseV4XML.ElemCustomIconID, entry.getCustomIcon().uuid);
+		if (!entry.getIconCustom().equals(PwIconCustom.ZERO)) {
+			writeObject(PwDatabaseV4XML.ElemCustomIconID, entry.getIconCustom().getUUID());
 		}
 		
 		writeObject(PwDatabaseV4XML.ElemFgColor, entry.getForegroundColor());
@@ -388,15 +394,14 @@ public class PwDbV4Output extends PwDbOutput<PwDbHeaderV4> {
 		
 		if (!isHistory) {
 			writeList(PwDatabaseV4XML.ElemHistory, entry.getHistory(), true);
-		} else {
-			assert(entry.sizeOfHistory() == 0);
 		}
+		// else entry.sizeOfHistory() == 0
 		
 		xml.endTag(null, PwDatabaseV4XML.ElemEntry);
 	}
 	
 
-	private void writeObject(String key, ProtectedBinary value, boolean allowRef) throws IllegalArgumentException, IllegalStateException, IOException {
+	private void writeObject(String key, ProtectedBinary value) throws IllegalArgumentException, IllegalStateException, IOException {
 		assert(key != null && value != null);
 		
 		xml.startTag(null, PwDatabaseV4XML.ElemBinary);
@@ -405,11 +410,8 @@ public class PwDbV4Output extends PwDbOutput<PwDbHeaderV4> {
 		xml.endTag(null, PwDatabaseV4XML.ElemKey);
 		
 		xml.startTag(null, PwDatabaseV4XML.ElemValue);
-		String strRef = null;
-		if (allowRef) {
-			int ref = mPM.getBinPool().poolFind(value);
-			strRef = Integer.toString(ref);
-		}
+		int ref = mPM.getBinPool().findKey(value);
+		String strRef = Integer.toString(ref);
 		
 		if (strRef != null) {
 			xml.attribute(null, PwDatabaseV4XML.AttrRef, strRef);
@@ -421,33 +423,85 @@ public class PwDbV4Output extends PwDbOutput<PwDbHeaderV4> {
 		
 		xml.endTag(null, PwDatabaseV4XML.ElemBinary);
 	}
-	
+
+	/*
+	TODO Make with pipe
 	private void subWriteValue(ProtectedBinary value) throws IllegalArgumentException, IllegalStateException, IOException {
-		if (value.isProtected()) {
-			xml.attribute(null, PwDatabaseV4XML.AttrProtected, PwDatabaseV4XML.ValTrue);
-			
-			int valLength = value.length();
-			if (valLength > 0) {
-				byte[] encoded = new byte[valLength];
-				randomStream.processBytes(value.getData(), 0, valLength, encoded, 0);
-				
-				xml.text(String.valueOf(Base64Coder.encode(encoded)));
-			}
-			
-		} else {
-			if (mPM.getCompressionAlgorithm() == PwCompressionAlgorithm.Gzip) {
-				xml.attribute(null, PwDatabaseV4XML.AttrCompressed, PwDatabaseV4XML.ValTrue);
-				byte[] raw = value.getData();
-				byte[] compressed = MemUtil.compress(raw);
-				xml.text(String.valueOf(Base64Coder.encode(compressed)));
-			} else {
-				byte[] raw = value.getData();
-				xml.text(String.valueOf(Base64Coder.encode(raw)));
-			}
-			
-		}
+        try (InputStream inputStream = value.getData()) {
+            if (inputStream == null) {
+                Log.e(TAG, "Can't write a null input stream.");
+                return;
+            }
+
+            if (value.isProtected()) {
+                xml.attribute(null, PwDatabaseV4XML.AttrProtected, PwDatabaseV4XML.ValTrue);
+
+                try (InputStream cypherInputStream =
+                             IOUtil.pipe(inputStream,
+                                     o -> new org.spongycastle.crypto.io.CipherOutputStream(o, randomStream))) {
+                    writeInputStreamInBase64(cypherInputStream);
+                }
+
+            } else {
+                if (mPM.getCompressionAlgorithm() == PwCompressionAlgorithm.Gzip) {
+
+                    xml.attribute(null, PwDatabaseV4XML.AttrCompressed, PwDatabaseV4XML.ValTrue);
+
+                    try (InputStream gZipInputStream =
+                                 IOUtil.pipe(inputStream, GZIPOutputStream::new, (int) value.length())) {
+                        writeInputStreamInBase64(gZipInputStream);
+                    }
+
+                } else {
+                    writeInputStreamInBase64(inputStream);
+                }
+            }
+        }
 	}
-	
+
+	private void writeInputStreamInBase64(InputStream inputStream) throws IOException {
+        try (InputStream base64InputStream =
+                     IOUtil.pipe(inputStream,
+                             o -> new Base64OutputStream(o, DEFAULT))) {
+            MemUtil.readBytes(base64InputStream,
+                    buffer -> xml.text(Arrays.toString(buffer)));
+        }
+    }
+    //*/
+
+    //*
+    private void subWriteValue(ProtectedBinary value) throws IllegalArgumentException, IllegalStateException, IOException {
+
+        int valLength = (int) value.length();
+        if (valLength > 0) {
+            byte[] buffer = new byte[valLength];
+            if (valLength == value.getData().read(buffer, 0, valLength)) {
+
+                if (value.isProtected()) {
+                    xml.attribute(null, PwDatabaseV4XML.AttrProtected, PwDatabaseV4XML.ValTrue);
+
+                    byte[] encoded = new byte[valLength];
+                    randomStream.processBytes(buffer, 0, valLength, encoded, 0);
+                    xml.text(String.valueOf(Base64Coder.encode(encoded)));
+
+                } else {
+                    if (mPM.getCompressionAlgorithm() == PwCompressionAlgorithm.Gzip) {
+                        xml.attribute(null, PwDatabaseV4XML.AttrCompressed, PwDatabaseV4XML.ValTrue);
+
+                        byte[] compressData = MemUtil.compress(buffer);
+                        xml.text(String.valueOf(Base64Coder.encode(compressData)));
+
+                    } else {
+                        xml.text(String.valueOf(Base64Coder.encode(buffer)));
+                    }
+                }
+            } else {
+                Log.e(TAG, "Unable to read the stream of the protected binary");
+            }
+        }
+    }
+    //*/
+
 	private void writeObject(String name, String value, boolean filterXmlChars) throws IllegalArgumentException, IllegalStateException, IOException {
 		assert(name != null && value != null);
 		
@@ -610,7 +664,7 @@ public class PwDbV4Output extends PwDbOutput<PwDbHeaderV4> {
 		assert(binaries != null);
 		
 		for (Entry<String, ProtectedBinary> pair : binaries.entrySet()) {
-			writeObject(pair.getKey(), pair.getValue(), true);
+			writeObject(pair.getKey(), pair.getValue());
 		}
 	}
 
@@ -695,8 +749,8 @@ public class PwDbV4Output extends PwDbOutput<PwDbHeaderV4> {
 		for (PwIconCustom icon : customIcons) {
 			xml.startTag(null, PwDatabaseV4XML.ElemCustomIconItem);
 			
-			writeObject(PwDatabaseV4XML.ElemCustomIconItemID, icon.uuid);
-			writeObject(PwDatabaseV4XML.ElemCustomIconItemData, String.valueOf(Base64Coder.encode(icon.imageData)));
+			writeObject(PwDatabaseV4XML.ElemCustomIconItemID, icon.getUUID());
+			writeObject(PwDatabaseV4XML.ElemCustomIconItemData, String.valueOf(Base64Coder.encode(icon.getImageData())));
 			
 			xml.endTag(null, PwDatabaseV4XML.ElemCustomIconItem);
 		}

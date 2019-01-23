@@ -19,9 +19,12 @@
  */
 package com.kunzisoft.keepass.database;
 
-import com.kunzisoft.keepass.database.security.ProtectedString;
+import android.os.Parcel;
+import android.os.Parcelable;
 
-import java.io.Serializable;
+import com.kunzisoft.keepass.database.security.ProtectedString;
+import com.kunzisoft.keepass.utils.MemUtil;
+
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -32,7 +35,7 @@ import static com.kunzisoft.keepass.database.PwEntryV4.STR_TITLE;
 import static com.kunzisoft.keepass.database.PwEntryV4.STR_URL;
 import static com.kunzisoft.keepass.database.PwEntryV4.STR_USERNAME;
 
-public class ExtraFields implements Serializable, Cloneable {
+public class ExtraFields implements Parcelable, Cloneable {
 
     private Map<String, ProtectedString> fields;
 
@@ -40,8 +43,50 @@ public class ExtraFields implements Serializable, Cloneable {
         fields = new HashMap<>();
     }
 
+    public ExtraFields(Parcel in) {
+        fields = MemUtil.readStringParcelableMap(in, ProtectedString.class);
+    }
+
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        MemUtil.writeStringParcelableMap(dest, flags, fields);
+    }
+
+    public static final Parcelable.Creator<ExtraFields> CREATOR = new Parcelable.Creator<ExtraFields>() {
+        @Override
+        public ExtraFields createFromParcel(Parcel in) {
+            return new ExtraFields(in);
+        }
+
+        @Override
+        public ExtraFields[] newArray(int size) {
+            return new ExtraFields[size];
+        }
+    };
+
     public boolean containsCustomFields() {
         return !getCustomProtectedFields().keySet().isEmpty();
+    }
+
+    public boolean containsCustomFieldsProtected() {
+        for (Map.Entry<String, ProtectedString> field : getCustomProtectedFields().entrySet()) {
+            if (field.getValue().isProtected())
+                return true;
+        }
+        return false;
+    }
+
+    public boolean containsCustomFieldsNotProtected() {
+        for (Map.Entry<String, ProtectedString> field : getCustomProtectedFields().entrySet()) {
+            if (!field.getValue().isProtected())
+                return true;
+        }
+        return false;
     }
 
     public String getProtectedStringValue(String key) {

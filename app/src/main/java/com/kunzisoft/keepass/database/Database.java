@@ -20,26 +20,26 @@
 package com.kunzisoft.keepass.database;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.content.res.Resources;
+import android.database.Cursor;
 import android.net.Uri;
-import android.preference.PreferenceManager;
 import android.util.Log;
 
-import com.kunzisoft.keepass.R;
 import com.kunzisoft.keepass.crypto.keyDerivation.KdfEngine;
 import com.kunzisoft.keepass.crypto.keyDerivation.KdfFactory;
+import com.kunzisoft.keepass.database.cursor.EntryCursor;
 import com.kunzisoft.keepass.database.exception.ContentFileNotFoundException;
 import com.kunzisoft.keepass.database.exception.InvalidDBException;
-import com.kunzisoft.keepass.database.exception.InvalidPasswordException;
 import com.kunzisoft.keepass.database.exception.PwDbOutputException;
 import com.kunzisoft.keepass.database.load.Importer;
 import com.kunzisoft.keepass.database.load.ImporterFactory;
 import com.kunzisoft.keepass.database.save.PwDbOutput;
+import com.kunzisoft.keepass.database.search.SearchDbHelper;
 import com.kunzisoft.keepass.icons.IconDrawableFactory;
-import com.kunzisoft.keepass.search.SearchDbHelper;
 import com.kunzisoft.keepass.tasks.ProgressTaskUpdater;
 import com.kunzisoft.keepass.utils.UriUtil;
+
+import org.apache.commons.io.FileUtils;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -51,13 +51,16 @@ import java.io.OutputStream;
 import java.io.SyncFailedException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+
+import javax.annotation.Nullable;
 
 
 public class Database {
 
     private static final String TAG = Database.class.getName();
 
-    private PwDatabase pm;
+    private PwDatabase pwDatabase;
     private Uri mUri;
     private SearchDbHelper searchHelper;
     private boolean readOnly = false;
@@ -68,11 +71,11 @@ public class Database {
     private boolean loaded = false;
 
     public PwDatabase getPwDatabase() {
-        return pm;
+        return pwDatabase;
     }
 
     public void setPwDatabase(PwDatabase pm) {
-        this.pm = pm;
+        this.pwDatabase = pm;
     }
 
     public void setUri(Uri mUri) {
@@ -107,7 +110,7 @@ public class Database {
         loadData(ctx, uri, password, keyfile, status, !Importer.DEBUG);
     }
 
-    public void loadData(Context ctx, Uri uri, String password, Uri keyfile, ProgressTaskUpdater status, boolean debug) throws IOException, FileNotFoundException, InvalidDBException {
+    private void loadData(Context ctx, Uri uri, String password, Uri keyfile, ProgressTaskUpdater status, boolean debug) throws IOException, FileNotFoundException, InvalidDBException {
         mUri = uri;
         readOnly = false;
         if (uri.getScheme().equals("file")) {
@@ -115,26 +118,10 @@ public class Database {
             readOnly = !file.canWrite();
         }
 
-        try {
-            passUrisAsInputStreams(ctx, uri, password, keyfile, status, debug, 0);
-        } catch (InvalidPasswordException e) {
-            // Retry with rounds fix
-            try {
-                passUrisAsInputStreams(ctx, uri, password, keyfile, status, debug, getFixRounds(ctx));
-            } catch (Exception e2) {
-                // Rethrow original exception
-                throw e;
-            }
-        }
+        passUrisAsInputStreams(ctx, uri, password, keyfile, status, debug);
     }
 
-    private long getFixRounds(Context ctx) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
-        return prefs.getLong(ctx.getString(R.string.roundsFix_key), ctx.getResources().getInteger(R.integer.roundsFix_default));
-    }
-
-
-    private void passUrisAsInputStreams(Context ctx, Uri uri, String password, Uri keyfile, ProgressTaskUpdater status, boolean debug, long roundsFix) throws IOException, FileNotFoundException, InvalidDBException {
+    private void passUrisAsInputStreams(Context ctx, Uri uri, String password, Uri keyfile, ProgressTaskUpdater status, boolean debug) throws IOException, FileNotFoundException, InvalidDBException {
         InputStream is, kfIs;
         try {
             is = UriUtil.getUriInputStream(ctx, uri);
@@ -149,14 +136,14 @@ public class Database {
             Log.e("KPD", "Database::loadData", e);
             throw ContentFileNotFoundException.getInstance(keyfile);
         }
-        loadData(ctx, is, password, kfIs, status, debug, roundsFix);
+        loadData(ctx, is, password, kfIs, status, debug);
     }
 
     public void loadData(Context ctx, InputStream is, String password, InputStream keyFileInputStream, boolean debug) throws IOException, InvalidDBException {
-        loadData(ctx, is, password, keyFileInputStream, null, debug, 0);
+        loadData(ctx, is, password, keyFileInputStream, null, debug);
     }
 
-    private void loadData(Context ctx, InputStream is, String password, InputStream keyFileInputStream, ProgressTaskUpdater progressTaskUpdater, boolean debug, long roundsFix) throws IOException, InvalidDBException {
+    private void loadData(Context ctx, InputStream is, String password, InputStream keyFileInputStream, ProgressTaskUpdater progressTaskUpdater, boolean debug) throws IOException, InvalidDBException {
         BufferedInputStream bis = new BufferedInputStream(is);
 
         if ( ! bis.markSupported() ) {
@@ -166,24 +153,25 @@ public class Database {
         // We'll end up reading 8 bytes to identify the header. Might as well use two extra.
         bis.mark(10);
 
-        Importer databaseImporter = ImporterFactory.createImporter(bis, debug);
+        // Get the file directory to save the attachments
+        Importer databaseImporter = ImporterFactory.createImporter(bis, ctx.getFilesDir(), debug);
 
         bis.reset();  // Return to the start
 
-        pm = databaseImporter.openDatabase(bis, password, keyFileInputStream, progressTaskUpdater, roundsFix);
-        if ( pm != null ) {
+        pwDatabase = databaseImporter.openDatabase(bis, password, keyFileInputStream, progressTaskUpdater);
+        if ( pwDatabase != null ) {
             try {
-                switch (pm.getVersion()) {
+                switch (pwDatabase.getVersion()) {
                     case V3:
-                        PwGroupV3 rootV3 = ((PwDatabaseV3) pm).getRootGroup();
-                        ((PwDatabaseV3) pm).populateGlobals(rootV3);
-                        passwordEncodingError = !pm.validatePasswordEncoding(password);
+                        PwGroupV3 rootV3 = ((PwDatabaseV3) pwDatabase).getRootGroup();
+                        ((PwDatabaseV3) pwDatabase).populateGlobals(rootV3);
+                        passwordEncodingError = !pwDatabase.validatePasswordEncoding(password);
                         searchHelper = new SearchDbHelper.SearchDbHelperV3(ctx);
                         break;
                     case V4:
-                        PwGroupV4 rootV4 = ((PwDatabaseV4) pm).getRootGroup();
-                        ((PwDatabaseV4) pm).populateGlobals(rootV4);
-                        passwordEncodingError = !pm.validatePasswordEncoding(password);
+                        PwGroupV4 rootV4 = ((PwDatabaseV4) pwDatabase).getRootGroup();
+                        ((PwDatabaseV4) pwDatabase).populateGlobals(rootV4);
+                        passwordEncodingError = !pwDatabase.validatePasswordEncoding(password);
                         searchHelper = new SearchDbHelper.SearchDbHelperV4(ctx);
                         break;
                 }
@@ -196,18 +184,70 @@ public class Database {
     }
 
     public PwGroup search(String str) {
+        return search(str, Integer.MAX_VALUE);
+    }
+
+    public PwGroup search(String str, int max) {
         if (searchHelper == null) { return null; }
         try {
-            switch (pm.getVersion()) {
+            switch (pwDatabase.getVersion()) {
                 case V3:
-                    return ((SearchDbHelper.SearchDbHelperV3) searchHelper).search(((PwDatabaseV3) pm), str);
+                    return ((SearchDbHelper.SearchDbHelperV3) searchHelper).search(((PwDatabaseV3) pwDatabase), str, max);
                 case V4:
-                    return ((SearchDbHelper.SearchDbHelperV4) searchHelper).search(((PwDatabaseV4) pm), str);
+                    return ((SearchDbHelper.SearchDbHelperV4) searchHelper).search(((PwDatabaseV4) pwDatabase), str, max);
             }
         } catch (Exception e) {
             Log.e(TAG, "Search can't be performed with this SearchHelper", e);
         }
         return null;
+    }
+
+    public Cursor searchEntry(String query) {
+        final EntryCursor cursor = new EntryCursor();
+
+        // TODO real content provider
+        if (!query.isEmpty()) {
+            PwGroup searchResult = search(query, 6);
+            PwVersion version = getPwDatabase().getVersion();
+            if (searchResult != null) {
+                for (int i = 0; i < searchResult.numbersOfChildEntries(); i++) {
+                    PwEntry entry = searchResult.getChildEntryAt(i);
+                    if (!entry.isMetaStream()) { // TODO metastream
+                        try {
+                            switch (version) {
+                                case V3:
+                                    cursor.addEntry((PwEntryV3) entry);
+                                    continue;
+                                case V4:
+                                    cursor.addEntry((PwEntryV4) entry);
+                            }
+                        } catch (Exception e) {
+                            Log.e(TAG, "Can't add PwEntry to the cursor", e);
+                        }
+                    }
+                }
+            }
+        }
+        return cursor;
+    }
+
+    public void populateEntry(PwEntry pwEntry, EntryCursor cursor) {
+        PwIconFactory iconFactory = getPwDatabase().getIconFactory();
+        try {
+            switch (getPwDatabase().getVersion()) {
+                case V3:
+                    cursor.populateEntry((PwEntryV3) pwEntry, iconFactory);
+                    break;
+                case V4:
+                    // TODO invert field reference manager
+                    pwEntry.startToManageFieldReferences(getPwDatabase());
+                    cursor.populateEntry((PwEntryV4) pwEntry, iconFactory);
+                    pwEntry.stopToManageFieldReferences();
+                    break;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "This version of PwGroup can't be populated", e);
+        }
     }
 
     public void saveData(Context ctx) throws IOException, PwDbOutputException {
@@ -224,7 +264,7 @@ public class Database {
             FileOutputStream fos = null;
             try {
                 fos = new FileOutputStream(tempFile);
-                PwDbOutput pmo = PwDbOutput.getInstance(pm, fos);
+                PwDbOutput pmo = PwDbOutput.getInstance(pwDatabase, fos);
                 if (pmo != null)
                     pmo.output();
             } catch (Exception e) {
@@ -252,7 +292,7 @@ public class Database {
             OutputStream os = null;
             try {
                 os = ctx.getContentResolver().openOutputStream(uri);
-                PwDbOutput pmo = PwDbOutput.getInstance(pm, os);
+                PwDbOutput pmo = PwDbOutput.getInstance(pwDatabase, os);
                 if (pmo != null)
                     pmo.output();
             } catch (Exception e) {
@@ -266,10 +306,20 @@ public class Database {
         mUri = uri;
     }
 
-    public void clear() {
+    // TODO Clear database when lock broadcast is receive in backstage
+    public void clear(Context context) {
         drawFactory.clearCache();
+        // Delete the cache of the database if present
+        if (pwDatabase != null)
+            pwDatabase.clearCache();
+        // In all cases, delete all the files in the temp dir
+        try {
+            FileUtils.cleanDirectory(context.getFilesDir());
+        } catch (IOException e) {
+            Log.e(TAG, "Unable to clear the directory cache.", e);
+        }
 
-        pm = null;
+        pwDatabase = null;
         mUri = null;
         loaded = false;
         passwordEncodingError = false;
@@ -384,7 +434,7 @@ public class Database {
     public List<KdfEngine> getAvailableKdfEngines() {
         switch (getPwDatabase().getVersion()) {
             case V4:
-                return KdfFactory.kdfList;
+                return KdfFactory.kdfListV4;
             case V3:
                 return KdfFactory.kdfListV3;
         }
@@ -396,10 +446,16 @@ public class Database {
     }
 
     public KdfEngine getKdfEngine() {
-        KdfEngine kdfEngine = getPwDatabase().getKdfEngine();
-        if (kdfEngine == null)
-            return KdfFactory.aesKdf;
-        return kdfEngine;
+        switch (getPwDatabase().getVersion()) {
+            case V4:
+                KdfEngine kdfEngine = ((PwDatabaseV4) getPwDatabase()).getKdfEngine();
+                if (kdfEngine == null)
+                    return KdfFactory.aesKdf;
+                return kdfEngine;
+            default:
+            case V3:
+                return KdfFactory.aesKdf;
+        }
     }
 
     public void assignKdfEngine(KdfEngine kdfEngine) {
@@ -407,7 +463,7 @@ public class Database {
             case V4:
                 PwDatabaseV4 db = ((PwDatabaseV4) getPwDatabase());
                 if (db.getKdfParameters() == null
-                        || !db.getKdfParameters().kdfUUID.equals(kdfEngine.getDefaultParameters().kdfUUID))
+                        || !db.getKdfParameters().getUUID().equals(kdfEngine.getDefaultParameters().getUUID()))
                     db.setKdfParameters(kdfEngine.getDefaultParameters());
                 setNumberKeyEncryptionRounds(kdfEngine.getDefaultKeyRounds());
                 setMemoryUsage(kdfEngine.getDefaultMemoryUsage());
@@ -417,7 +473,7 @@ public class Database {
     }
 
     public String getKeyDerivationName(Resources resources) {
-        KdfEngine kdfEngine = getPwDatabase().getKdfEngine();
+        KdfEngine kdfEngine = getKdfEngine();
         if (kdfEngine != null) {
             return kdfEngine.getName(resources);
         }
@@ -474,19 +530,22 @@ public class Database {
         }
     }
 
-    public PwEntry createEntry(PwGroup parent) {
-        PwEntry newPwEntry = null;
+    public PwEntry createEntry() {
+        return createEntry(null);
+    }
+
+    public PwEntry createEntry(@Nullable PwGroup parent) {
         try {
             switch (getPwDatabase().getVersion()) {
                 case V3:
-                    newPwEntry = new PwEntryV3((PwGroupV3) parent);
+                    return new PwEntryV3((PwGroupV3) parent);
                 case V4:
-                    newPwEntry = new PwEntryV4((PwGroupV4) parent);
+                    return new PwEntryV4((PwGroupV4) parent);
             }
         } catch (Exception e) {
             Log.e(TAG, "This version of PwEntry can't be created", e);
         }
-        return newPwEntry;
+        return null;
     }
 
     public PwGroup createGroup(PwGroup parent) {
@@ -498,7 +557,7 @@ public class Database {
                 case V4:
                     newPwGroup = new PwGroupV4((PwGroupV4) parent);
             }
-            newPwGroup.setId(pm.newGroupId());
+            newPwGroup.setId(pwDatabase.newGroupId());
         } catch (Exception e) {
             Log.e(TAG, "This version of PwGroup can't be created", e);
         }
@@ -651,6 +710,44 @@ public class Database {
         } catch (Exception e) {
             Log.e(TAG, "This version of PwEntry can't be updated", e);
         }
+    }
+
+    /**
+     * @return A duplicate entry with the same values, a new UUID,
+     * @param entryToCopy
+     * @param newParent
+     */
+    public @Nullable PwEntry copyEntry(PwEntry entryToCopy, PwGroup newParent) {
+        try {
+            // TODO encapsulate
+            switch (getPwDatabase().getVersion()) {
+                case V3:
+                    PwEntryV3 entryV3Copied = ((PwEntryV3) entryToCopy).clone();
+                    entryV3Copied.setUUID(UUID.randomUUID());
+                    entryV3Copied.setParent((PwGroupV3) newParent);
+                    addEntryTo(entryV3Copied, newParent);
+                    return entryV3Copied;
+                case V4:
+                    PwEntryV4 entryV4Copied = ((PwEntryV4) entryToCopy).clone();
+                    entryV4Copied.setUUID(UUID.randomUUID());
+                    entryV4Copied.setParent((PwGroupV4) newParent);
+                    addEntryTo(entryV4Copied, newParent);
+                    return entryV4Copied;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "This version of PwEntry can't be updated", e);
+        }
+        return null;
+    }
+
+    public void moveEntry(PwEntry entryToMove, PwGroup newParent) {
+        removeEntryFrom(entryToMove, entryToMove.parent);
+        addEntryTo(entryToMove, newParent);
+    }
+
+    public void moveGroup(PwGroup groupToMove, PwGroup newParent) {
+        removeGroupFrom(groupToMove, groupToMove.parent);
+        addGroupTo(groupToMove, newParent);
     }
 
     public void deleteEntry(PwEntry entry) {

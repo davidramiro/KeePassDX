@@ -20,25 +20,46 @@
 
 package com.kunzisoft.keepass.database;
 
-/**
- * @author Brian Pellin <bpellin@gmail.com>
- * @author Naomaru Itoi <nao@phoneid.org>
- * @author Bill Zwicky <wrzwicky@pobox.com>
- * @author Dominik Reichl <dominik.reichl@t-online.de>
- */
-public class PwGroupV3 extends PwGroup<PwGroupV3, PwGroupV3, PwEntryV3> {
+import android.os.Parcel;
+
+public class PwGroupV3 extends PwGroup<PwGroupV3, PwEntryV3> {
 
 	// for tree traversing
 	private int groupId;
-
 	private int level = 0; // short
-
 	/** Used by KeePass internally, don't use */
 	private int flags;
 
     public PwGroupV3() {
         super();
     }
+
+    public PwGroupV3(Parcel in) {
+        super(in);
+        groupId = in.readInt();
+        level = in.readInt();
+        flags = in.readInt();
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        super.writeToParcel(dest, flags);
+        dest.writeInt(groupId);
+        dest.writeInt(level);
+        dest.writeInt(flags);
+    }
+
+    public static final Creator<PwGroupV3> CREATOR = new Creator<PwGroupV3>() {
+        @Override
+        public PwGroupV3 createFromParcel(Parcel in) {
+            return new PwGroupV3(in);
+        }
+
+        @Override
+        public PwGroupV3[] newArray(int size) {
+            return new PwGroupV3[size];
+        }
+    };
 
     public PwGroupV3(PwGroupV3 p) {
         construct(p);
@@ -109,7 +130,7 @@ public class PwGroupV3 extends PwGroup<PwGroupV3, PwGroupV3, PwEntryV3> {
     public void populateBlankFields(PwDatabaseV3 db) {
 	    // TODO populate blanck field
         if (icon == null) {
-            icon = db.getIconFactory().getFirstIcon();
+            icon = db.getIconFactory().getFolderIcon();
         }
 
         if (name == null) {

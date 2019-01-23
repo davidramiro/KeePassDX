@@ -126,11 +126,11 @@ public class ImporterV3 extends Importer {
 	@Override
 	public PwDatabaseV3 openDatabase( InputStream inStream, String password, InputStream kfIs)
 	throws IOException, InvalidDBException {
-		return openDatabase(inStream, password, kfIs, null, 0);
+		return openDatabase(inStream, password, kfIs, null);
 	}
 
 	@Override
-	public PwDatabaseV3 openDatabase(InputStream inStream, String password, InputStream kfIs, ProgressTaskUpdater progressTaskUpdater, long roundsFix)
+	public PwDatabaseV3 openDatabase(InputStream inStream, String password, InputStream kfIs, ProgressTaskUpdater progressTaskUpdater)
 	throws IOException, InvalidDBException {
 
 		PwDatabaseV3 databaseToOpen;
@@ -156,7 +156,7 @@ public class ImporterV3 extends Importer {
 		}
 
 		if (progressTaskUpdater != null)
-            progressTaskUpdater.updateMessage(R.string.creating_db_key);
+            progressTaskUpdater.updateMessage(R.string.retrieving_db_key);
 		databaseToOpen = createDB();
 		databaseToOpen.retrieveMasterKey(password, kfIs);
 
@@ -316,7 +316,7 @@ public class ImporterV3 extends Importer {
 			grp.setExpiryTime(new PwDate(buf, offset));
 			break;
 		case 0x0007 :
-			grp.setIcon(db.getIconFactory().getIcon(LEDataInputStream.readInt(buf, offset)));
+			grp.setIconStandard(db.getIconFactory().getIcon(LEDataInputStream.readInt(buf, offset)));
 			break;
 		case 0x0008 :
 			grp.setLevel(LEDataInputStream.readUShort(buf, offset));
@@ -353,7 +353,7 @@ public class ImporterV3 extends Importer {
 				iconId = 0;
 			}
 			
-			ent.setIcon(db.getIconFactory().getIcon(iconId));
+			ent.setIconStandard(db.getIconFactory().getIcon(iconId));
 			break;
 		case 0x0004 :
 			ent.setTitle(Types.readCString(buf, offset));

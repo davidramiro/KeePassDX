@@ -98,7 +98,7 @@ public class ClipboardHelper {
     public void copyToClipboard(String label, String value) throws SamsungClipboardException {
         try {
             clipboardManager.setPrimaryClip(ClipData.newPlainText(label, value));
-        } catch (NullPointerException e) {
+        } catch (Exception e) {
             throw new SamsungClipboardException(e);
         }
     }
@@ -132,7 +132,7 @@ public class ClipboardHelper {
             if ( currentClip.equals(mClearText) ) {
                 try {
                     cleanClipboard();
-                    uiThreadCallback.post(new UIToastTask(mCtx, R.string.ClearClipboard));
+                    uiThreadCallback.post(new UIToastTask(mCtx, R.string.clipboard_cleared));
                 } catch (SamsungClipboardException e) {
                     uiThreadCallback.post(new UIToastTask(mCtx, R.string.clipboard_error_clear));
                 }

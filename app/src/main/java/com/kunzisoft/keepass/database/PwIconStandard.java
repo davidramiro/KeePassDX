@@ -19,15 +19,20 @@
  */
 package com.kunzisoft.keepass.database;
 
-public class PwIconStandard extends PwIcon {
-	public final int iconId;
+import android.os.Parcel;
 
-	// The first is number 0
-	public static PwIconStandard FIRST = new PwIconStandard(0);
-	
-	public static final int TRASH_BIN = 43;
+public class PwIconStandard extends PwIcon {
+	private final int iconId;
+
+	public static final int UNKNOWN = -1;
+	public static final int KEY = 0;
+	public static final int TRASH = 43;
 	public static final int FOLDER = 48;
-	
+
+	public PwIconStandard() {
+		this.iconId = KEY;
+	}
+
 	public PwIconStandard(int iconId) {
 		this.iconId = iconId;
 	}
@@ -35,6 +40,37 @@ public class PwIconStandard extends PwIcon {
     public PwIconStandard(PwIconStandard icon) {
         this.iconId = icon.iconId;
     }
+
+	protected PwIconStandard(Parcel in) {
+		super(in);
+		iconId = in.readInt();
+	}
+
+	@Override
+	public boolean isUnknown() {
+	    return iconId == UNKNOWN;
+    }
+
+    public int getIconId() {
+        return iconId;
+    }
+
+    @Override
+	public void writeToParcel(Parcel dest, int flags) {
+		dest.writeInt(iconId);
+	}
+
+	public static final Creator<PwIconStandard> CREATOR = new Creator<PwIconStandard>() {
+		@Override
+		public PwIconStandard createFromParcel(Parcel in) {
+			return new PwIconStandard(in);
+		}
+
+		@Override
+		public PwIconStandard[] newArray(int size) {
+			return new PwIconStandard[size];
+		}
+	};
 
 	@Override
 	public boolean isMetaStreamIcon() {

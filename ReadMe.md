@@ -13,6 +13,7 @@
  * **Fingerprint** for fast unlocking
  * Material design with **themes**
  * **AutoFill** and Integration
+ * Field filling **keyboard**
  * Precise management of **settings**
 
 Keepass DX is **open source** and **ad-free**. 
@@ -27,7 +28,7 @@ KeePass DX is a **free open source password manager for Android**, which helps y
 
 Yes, KeePass DX is under **free license (OSI certified)** and **without advertising**. You can have a look at its full source and check whether the encryption algorithms are implemented correctly.
 
-*Note : If you access the application from a store, visual features may not be available to incentivize the contribution to the work of open source projects. These optional visuals are accessible after a donation (and a small congratulation message :) or the purchase of an extended version, but do not worry, the main features remain completely free.*
+*Note : If you access the application from a store, visual features may not be available to incentivize the contribution to the work of open source projects. These optional visuals are accessible after a donation (and a small congratulation message :) or the purchase of an extended version, but do not worry, the main features remain completely free. If you contribute to the project and you do not have access to the themes, do not hesitate to contact me at [contact@kunzisoft.com](contact@kunzisoft.com), I will give you the procedure.*
 
 ## Contributions
 
@@ -52,7 +53,7 @@ You can contribute in different ways to help us on our work.
 	
 ## F.A.Q.
 
-Other questions? You can read the [F.A.Q.](https://github.com/Kunzisoft/KeePassDX/blob/master/FAQ.md) 
+Other questions? You can read the [F.A.Q.](https://www.keepassdx.com/FAQ) 
 	
 ## Other devices
 
@@ -66,7 +67,7 @@ Other questions? You can read the [F.A.Q.](https://github.com/Kunzisoft/KeePassD
 
  This file is part of KeePass DX.
 
-  KeePass DX is free software: you can redistribute it and/or modify
+  [KeePass DX](https://www.keepassdx.com) is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.

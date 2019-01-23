@@ -26,7 +26,6 @@ import android.support.design.widget.FloatingActionButton;
 import android.support.v4.view.ViewCompat;
 import android.support.v4.view.ViewPropertyAnimatorListener;
 import android.support.v4.view.animation.FastOutSlowInInterpolator;
-import android.support.v7.widget.RecyclerView;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -124,20 +123,14 @@ public class AddNodeButtonView extends RelativeLayout {
         return super.onTouchEvent(event);
     }
 
-    public RecyclerView.OnScrollListener hideButtonOnScrollListener() {
-	    return new RecyclerView.OnScrollListener() {
-            @Override
-            public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
-                super.onScrolled(recyclerView, dx, dy);
-                if (state.equals(State.CLOSE)) {
-                    if (dy > 0 && addButtonView.getVisibility() == View.VISIBLE) {
-                        hideButton();
-                    } else if (dy < 0 && addButtonView.getVisibility() != View.VISIBLE) {
-                        showButton();
-                    }
-                }
+    public void hideButtonOnScrollListener(int dy) {
+        if (state.equals(State.CLOSE)) {
+            if (dy > 0 && addButtonView.getVisibility() == View.VISIBLE) {
+                hideButton();
+            } else if (dy < 0 && addButtonView.getVisibility() != View.VISIBLE) {
+                showButton();
             }
-        };
+        }
     }
 
 	public void showButton() {
@@ -174,6 +167,7 @@ public class AddNodeButtonView extends RelativeLayout {
         this.addEntryEnable = enable;
         if (enable && addEntryView != null && addEntryView.getVisibility() != VISIBLE)
             addEntryView.setVisibility(INVISIBLE);
+        disableViewIfNoAddAvailable();
     }
 
     /**
@@ -184,6 +178,19 @@ public class AddNodeButtonView extends RelativeLayout {
 	    this.addGroupEnable = enable;
         if (enable && addGroupView != null && addGroupView.getVisibility() != VISIBLE)
             addGroupView.setVisibility(INVISIBLE);
+        disableViewIfNoAddAvailable();
+    }
+
+    private void disableViewIfNoAddAvailable() {
+        if (!addEntryEnable || !addGroupEnable) {
+            setVisibility(GONE);
+        } else {
+            setVisibility(VISIBLE);
+        }
+    }
+
+    public boolean isEnable() {
+        return getVisibility() == VISIBLE;
     }
 
     public void setAddGroupClickListener(OnClickListener onClickListener) {

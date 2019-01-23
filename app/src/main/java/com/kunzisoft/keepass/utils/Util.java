@@ -30,9 +30,7 @@ import android.net.Uri;
 import android.widget.EditText;
 import android.widget.TextView;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import com.kunzisoft.keepass.R;
 
 public class Util {
 
@@ -46,20 +44,8 @@ public class Util {
 	public static void gotoUrl(Context context, int resId) throws ActivityNotFoundException {
 		gotoUrl(context, context.getString(resId));
 	}
-	
-	public static void copyStream(InputStream in, OutputStream out) throws IOException {
-		byte[] buf = new byte[1024];
-		int read;
-		try {
-            while ((read = in.read(buf)) != -1) {
-                out.write(buf, 0, read);
-            }
-        } catch (OutOfMemoryError error) {
-		    throw new IOException(error);
-        }
-	}
 
-    /**
+	/**
      * Replace font by monospace, must be called after seText()
      */
     public static void applyFontVisibilityTo(final Context context, final TextView textView) {
@@ -74,6 +60,10 @@ public class Util {
         applyFontVisibilityTo(context, (TextView) editText);
 	}
 
+	public static float getListTextDefaultSize(Context context) {
+		return Float.parseFloat(context.getString(R.string.list_size_default));
+	}
+
     public static void lockScreenOrientation(Activity activity) {
 		if (activity != null) {
 			int currentOrientation = activity.getResources().getConfiguration().orientation;
@@ -86,7 +76,8 @@ public class Util {
 	}
 
     public static void unlockScreenOrientation(Activity activity) {
-		if (activity != null)
-            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR);
+        if (activity != null) {
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        }
 	}
 }

@@ -25,6 +25,7 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.support.v4.content.ContextCompat;
@@ -33,7 +34,6 @@ import android.util.Log;
 import android.widget.ImageView;
 
 import com.kunzisoft.keepass.R;
-import com.kunzisoft.keepass.compat.BitmapDrawableCompat;
 import com.kunzisoft.keepass.database.PwIcon;
 import com.kunzisoft.keepass.database.PwIconCustom;
 import com.kunzisoft.keepass.database.PwIconStandard;
@@ -65,51 +65,49 @@ public class IconDrawableFactory {
 	private ReferenceMap standardIconMap = new ReferenceMap(AbstractReferenceMap.HARD, AbstractReferenceMap.WEAK);
 
     /**
-     * Assign a default database icon to an ImageView
+     * Assign a default database icon to an ImageView and tint it if needed
      *
      * @param context Context to build the drawable
-     * @param iv ImageView that will host the drawable
+     * @param iconView ImageView that will host the drawable
+     * @param tintColor Use this color to tint tintable icon
      */
-    public void assignDefaultDatabaseIconTo(Context context, ImageView iv) {
-        assignDefaultDatabaseIconTo(context, iv, false, Color.WHITE);
+    public void assignDefaultDatabaseIconTo(Context context, ImageView iconView, int tintColor) {
+        if (IconPackChooser.getSelectedIconPack(context).tintable()) {
+            assignDrawableTo(context,
+                    iconView,
+                    IconPackChooser.getSelectedIconPack(context).getDefaultIconId(),
+                    true,
+                    tintColor);
+        } else {
+            assignDrawableTo(context,
+                    iconView,
+                    IconPackChooser.getSelectedIconPack(context).getDefaultIconId(),
+                    false,
+                    Color.WHITE);
+        }
     }
 
     /**
-     * Assign a default database icon to an ImageView and tint it
+     *  Assign a database icon to an ImageView and tint it if needed
      *
      * @param context Context to build the drawable
-     * @param iv ImageView that will host the drawable
-     */
-    public void assignDefaultDatabaseIconTo(Context context, ImageView iv, boolean tint, int tintColor) {
-        assignDrawableTo(context, iv, IconPackChooser.getSelectedIconPack(context).getDefaultIconId(), tint, tintColor);
-    }
-
-    /**
-     * Assign a database icon to an ImageView
-     *
-     * @param context Context to build the drawable
-     * @param iv ImageView that will host the drawable
+     * @param iconView ImageView that will host the drawable
      * @param icon The icon from the database
+     * @param tintColor Use this color to tint tintable icon
      */
-	public void assignDatabaseIconTo(Context context, ImageView iv, PwIcon icon) {
-        assignDatabaseIconTo(context, iv, icon, false, Color.WHITE);
+	public void assignDatabaseIconTo(Context context, ImageView iconView, PwIcon icon, int tintColor) {
+		if (IconPackChooser.getSelectedIconPack(context).tintable()) {
+            assignDrawableToImageView(getIconDrawable(context, icon, true, tintColor),
+                    iconView,
+                    true,
+                    tintColor);
+		} else {
+            assignDrawableToImageView(getIconDrawable(context, icon, true, tintColor),
+                    iconView,
+                    false,
+                    Color.WHITE);
+		}
 	}
-
-    /**
-     *  Assign a database icon to an ImageView and tint it
-     *
-     * @param context Context to build the drawable
-     * @param imageView ImageView that will host the drawable
-     * @param icon The icon from the database
-     * @param tint true will tint the drawable with tintColor
-     * @param tintColor Use this color if tint is true
-     */
-    public void assignDatabaseIconTo(Context context, ImageView imageView, PwIcon icon, boolean tint, int tintColor) {
-        assignDrawableToImageView(getIconDrawable(context, icon, tint, tintColor),
-                imageView,
-                tint,
-                tintColor);
-    }
 
     /**
      *  Assign an image by its resourceId to an ImageView and tint it
@@ -221,7 +219,7 @@ public class IconDrawableFactory {
      * @return The drawable
      */
 	private Drawable getIconDrawable(Context context, PwIconStandard icon, boolean isTint, int tintColor) {
-		int resId = IconPackChooser.getSelectedIconPack(context).iconToResId(icon.iconId);
+		int resId = IconPackChooser.getSelectedIconPack(context).iconToResId(icon.getIconId());
 
 		return getIconDrawable(context, resId, isTint, tintColor);
 	}
@@ -289,14 +287,14 @@ public class IconDrawableFactory {
 			return blank;
 		}
 		
-		Drawable draw = (Drawable) customIconMap.get(icon.uuid);
+		Drawable draw = (Drawable) customIconMap.get(icon.getUUID());
 		
 		if (draw == null) {
-			if (icon.imageData == null) {
+			if (icon.getImageData() == null) {
 				return blank;
 			}
 			
-			Bitmap bitmap = BitmapFactory.decodeByteArray(icon.imageData, 0, icon.imageData.length);
+			Bitmap bitmap = BitmapFactory.decodeByteArray(icon.getImageData(), 0, icon.getImageData().length);
 			
 			// Could not understand custom icon
 			if (bitmap == null) {
@@ -305,8 +303,8 @@ public class IconDrawableFactory {
 			
 			bitmap = resize(bitmap);
 			
-			draw = BitmapDrawableCompat.getBitmapDrawable(context.getResources(), bitmap);
-			customIconMap.put(icon.uuid, draw);
+			draw = new BitmapDrawable(context.getResources(), bitmap);
+			customIconMap.put(icon.getUUID(), draw);
 		}
 
 		return draw;

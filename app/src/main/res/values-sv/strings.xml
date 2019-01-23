@@ -22,7 +22,7 @@
 <resources>
     <string name="about_feedback">Feedback:</string>
     <string name="about_homepage">Hemsida:</string>
-    <string name="AboutText">KeePass DX är en Android-implementation av KeePass password manager.</string>
+    <string name="about_description">KeePass DX är en Android-implementation av KeePass password manager.</string>
     <string name="accept">OK</string>
     <string name="add_entry">Ny post</string>
     <string name="add_group">Ny grupp</string>
@@ -35,14 +35,14 @@
     <string name="brackets">Parenteser</string>
     <string name="browser_intall_text">Filhantering kräver Open Intents File Manager, klicka nedan för att installera. Filhanteraren kanske inte fungerar korrekt vid första användningen.</string>
     <string name="cancel">Avbryt</string>
-    <string name="ClearClipboard">Urklippet är rensat.</string>
+    <string name="clipboard_cleared">Urklippet är rensat.</string>
     <string name="clipboard_error_title">Urklippsfel</string>
     <string name="clipboard_error">Vissa Samsung-telefoner har en bugg som gör att applikationer inte kan kopiera till urklipp. För mer detaljer, gå till:</string>
     <string name="clipboard_error_clear">Urklippet kunde inte rensas</string>
     <string name="clipboard_timeout">Tidsgräns för urklipp</string>
     <string name="clipboard_timeout_summary">Tiden innan användarnamn och lösenord rensas från urklipp</string>
     <string name="select_to_copy">Kopiera %1$s till urklipp</string>
-    <string name="creating_db_key">Skapar databasnyckel&#8230;</string>
+    <string name="retrieving_db_key">Skapar databasnyckel&#8230;</string>
     <string name="database">Databas</string>
     <string name="decrypting_db">Dekrypterar databasinnehåll&#8230;</string>
     <string name="default_checkbox">Använda denna databasen som standard</string>
@@ -95,7 +95,7 @@
     <string name="password">Lösenord</string>
     <string name="install_from_play_store">Installera från Play Store</string>
     <string name="install_from_f_droid">Installera från F-Droid</string>
-    <string name="InvalidPassword">Ogiltigt lösenord eller nyckelfil.</string>
+    <string name="invalid_password">Ogiltigt lösenord eller nyckelfil.</string>
     <string name="invalid_algorithm">Ogiltig algoritm.</string>
     <string name="invalid_db_sig">Databasformatet är okänt.</string>
     <string name="keyfile_does_not_exist">Nyckelfilen existerar inte.</string>
@@ -149,9 +149,8 @@
     <string name="underline">Understreck</string>
     <string name="unsupported_db_version">Databasversionen stöds ej.</string>
     <string name="uppercase">Versaler</string>
-    <string name="warning_read_only">SD-kortet är för närvarande skrivskyddat. Du kanske inte kan spara ändringar i databasen.</string>
     <string name="warning_unmounted">SD-kortet är för närvarande inte monterat på enheten. Du kan inte skapa/ladda databasen.</string>
-    <string name="version_label">Version:</string>
+    <string name="version_label">Version %1$s</string>
 
     <string name="education_unlock_summary">Ange lösenord och/eller nyckelfil för att öppna databasen.</string>
 

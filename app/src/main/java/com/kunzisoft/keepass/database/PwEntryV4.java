@@ -19,8 +19,11 @@
  */
 package com.kunzisoft.keepass.database;
 
+import android.os.Parcel;
+
 import com.kunzisoft.keepass.database.security.ProtectedBinary;
 import com.kunzisoft.keepass.database.security.ProtectedString;
+import com.kunzisoft.keepass.utils.MemUtil;
 import com.kunzisoft.keepass.utils.SprEngineV4;
 
 import java.util.ArrayList;
@@ -37,7 +40,7 @@ public class PwEntryV4 extends PwEntry<PwGroupV4> implements ITimeLogger {
 	public static final String STR_URL = "URL";
 	public static final String STR_NOTES = "Notes";
 
-	// To decode each field not serializable
+	// To decode each field not parcelable
     private transient PwDatabaseV4 mDatabase = null;
     private transient boolean mDecodeRef = false;
 
@@ -45,7 +48,6 @@ public class PwEntryV4 extends PwEntry<PwGroupV4> implements ITimeLogger {
     private long usageCount = 0;
     private PwDate parentGroupLastMod = new PwDate();
     private Map<String, String> customData = new HashMap<>();
-
     private ExtraFields fields = new ExtraFields();
     private HashMap<String, ProtectedBinary> binaries = new HashMap<>();
 	private String foregroundColor = "";
@@ -53,7 +55,6 @@ public class PwEntryV4 extends PwEntry<PwGroupV4> implements ITimeLogger {
 	private String overrideURL = "";
 	private AutoType autoType = new AutoType();
 	private ArrayList<PwEntryV4> history = new ArrayList<>();
-
 	private String url = "";
 	private String additional = "";
 	private String tags = "";
@@ -71,8 +72,8 @@ public class PwEntryV4 extends PwEntry<PwGroupV4> implements ITimeLogger {
         customIcon = source.customIcon;
         usageCount = source.usageCount;
         parentGroupLastMod = source.parentGroupLastMod;
-        // TODO customData
-
+        customData.clear();
+		customData.putAll(source.customData); // Add all custom elements in map
         fields = source.fields;
         binaries = source.binaries;
         foregroundColor = source.foregroundColor;
@@ -80,11 +81,59 @@ public class PwEntryV4 extends PwEntry<PwGroupV4> implements ITimeLogger {
         overrideURL = source.overrideURL;
         autoType = source.autoType;
         history = source.history;
-
         url = source.url;
         additional = source.additional;
         tags = source.tags;
     }
+
+	public PwEntryV4(Parcel in) {
+		super(in);
+		customIcon = in.readParcelable(PwIconCustom.class.getClassLoader());
+		usageCount = in.readLong();
+		parentGroupLastMod = in.readParcelable(PwDate.class.getClassLoader());
+		customData = MemUtil.readStringParcelableMap(in);
+		fields = in.readParcelable(ExtraFields.class.getClassLoader());
+		binaries = MemUtil.readStringParcelableMap(in, ProtectedBinary.class);
+		foregroundColor = in.readString();
+		backgroupColor = in.readString();
+		overrideURL = in.readString();
+		autoType = in.readParcelable(AutoType.class.getClassLoader());
+		history = in.readArrayList(PwEntryV4.class.getClassLoader()); // TODO verify
+		url = in.readString();
+		additional = in.readString();
+		tags = in.readString();
+	}
+
+	@Override
+	public void writeToParcel(Parcel dest, int flags) {
+		super.writeToParcel(dest, flags);
+		dest.writeParcelable(customIcon, flags);
+		dest.writeLong(usageCount);
+		dest.writeParcelable(parentGroupLastMod, flags);
+		MemUtil.writeStringParcelableMap(dest, customData);
+		dest.writeParcelable(fields, flags);
+        // TODO MemUtil.writeStringParcelableMap(dest, flags, binaries);
+		dest.writeString(foregroundColor);
+		dest.writeString(backgroupColor);
+		dest.writeString(overrideURL);
+		dest.writeParcelable(autoType, flags);
+		dest.writeList(history);
+		dest.writeString(url);
+		dest.writeString(additional);
+		dest.writeString(tags);
+	}
+
+	public static final Creator<PwEntryV4> CREATOR = new Creator<PwEntryV4>() {
+		@Override
+		public PwEntryV4 createFromParcel(Parcel in) {
+			return new PwEntryV4(in);
+		}
+
+		@Override
+		public PwEntryV4[] newArray(int size) {
+			return new PwEntryV4[size];
+		}
+	};
 
     @SuppressWarnings("unchecked")
     @Override
@@ -120,7 +169,7 @@ public class PwEntryV4 extends PwEntry<PwGroupV4> implements ITimeLogger {
 	}
 
 	@Override
-	public void endToManageFieldReferences() {
+	public void stopToManageFieldReferences() {
         this.mDatabase = null;
         this.mDecodeRef = false;
 	}
@@ -156,41 +205,31 @@ public class PwEntryV4 extends PwEntry<PwGroupV4> implements ITimeLogger {
 
 	@Override
 	public void setTitle(String title) {
-		PwDatabaseV4 db = mDatabase;
-		boolean protect = db.getMemoryProtection().protectTitle;
-		
+		boolean protect = (mDatabase != null) && mDatabase.getMemoryProtection().protectTitle;
 		setProtectedString(STR_TITLE, title, protect);
 	}
 
 	@Override
 	public void setUsername(String user) {
-		PwDatabaseV4 db = mDatabase;
-		boolean protect = db.getMemoryProtection().protectUserName;
-		
+		boolean protect = (mDatabase != null) && mDatabase.getMemoryProtection().protectUserName;
 		setProtectedString(STR_USERNAME, user, protect);
 	}
 
 	@Override
 	public void setPassword(String pass) {
-		PwDatabaseV4 db = mDatabase;
-		boolean protect = db.getMemoryProtection().protectPassword;
-		
+		boolean protect = (mDatabase != null) && mDatabase.getMemoryProtection().protectPassword;
 		setProtectedString(STR_PASSWORD, pass, protect);
 	}
 
 	@Override
 	public void setUrl(String url) {
-		PwDatabaseV4 db = mDatabase;
-		boolean protect = db.getMemoryProtection().protectUrl;
-		
+		boolean protect = (mDatabase != null) && mDatabase.getMemoryProtection().protectUrl;
 		setProtectedString(STR_URL, url, protect);
 	}
 
 	@Override
 	public void setNotes(String notes) {
-		PwDatabaseV4 db = mDatabase;
-		boolean protect = db.getMemoryProtection().protectNotes;
-		
+		boolean protect = (mDatabase != null) && mDatabase.getMemoryProtection().protectNotes;
 		setProtectedString(STR_NOTES, notes, protect);
 	}
 
@@ -201,14 +240,6 @@ public class PwEntryV4 extends PwEntry<PwGroupV4> implements ITimeLogger {
 	public void setProtectedString(String key, String value, boolean protect) {
 		fields.putProtectedString(key, value, protect);
 	}
-
-	public PwIconCustom getCustomIcon() {
-	    return customIcon;
-    }
-
-    public void setCustomIcon(PwIconCustom icon) {
-	    this.customIcon = icon;
-    }
 
 	public PwDate getLocationChanged() {
 		return parentGroupLastMod;
@@ -236,13 +267,26 @@ public class PwEntryV4 extends PwEntry<PwGroupV4> implements ITimeLogger {
 		return decodeRefKey(mDecodeRef, STR_URL);
 	}
 
-	@Override
+    @Override
 	public PwIcon getIcon() {
-		if (customIcon == null || customIcon.uuid.equals(PwDatabase.UUID_ZERO)) {
+		if (customIcon == null || customIcon.isUnknown()) {
 			return super.getIcon();
 		} else {
 			return customIcon;
 		}
+	}
+
+	public void setIconCustom(PwIconCustom icon) {
+		this.customIcon = icon;
+	}
+
+	public PwIconCustom getIconCustom() {
+		return customIcon;
+	}
+
+	public void setIconStandard(PwIconStandard icon) {
+		this.icon = icon;
+		this.customIcon = PwIconCustom.ZERO;
 	}
 
 	@Override

@@ -26,35 +26,49 @@ import android.support.annotation.NonNull;
 import android.support.v7.util.SortedList;
 import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.util.SortedListAdapterCallback;
+import android.util.Log;
+import android.util.TypedValue;
 import android.view.ContextMenu;
 import android.view.LayoutInflater;
-import android.view.Menu;
+import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Toast;
 
 import com.kunzisoft.keepass.R;
 import com.kunzisoft.keepass.app.App;
+import com.kunzisoft.keepass.database.Database;
+import com.kunzisoft.keepass.database.PwEntry;
 import com.kunzisoft.keepass.database.PwGroup;
 import com.kunzisoft.keepass.database.PwNode;
 import com.kunzisoft.keepass.database.SortNodeEnum;
-import com.kunzisoft.keepass.icons.IconPackChooser;
 import com.kunzisoft.keepass.settings.PreferencesUtil;
+import com.kunzisoft.keepass.utils.Util;
 
 public class NodeAdapter extends RecyclerView.Adapter<BasicViewHolder> {
+    private static final String TAG = NodeAdapter.class.getName();
 
     private SortedList<PwNode> nodeSortedList;
 
     private Context context;
     private LayoutInflater inflater;
+    private MenuInflater menuInflater;
     private float textSize;
+    private float subtextSize;
+    private float iconSize;
     private SortNodeEnum listSort;
     private boolean groupsBeforeSort;
     private boolean ascendingSort;
+    private boolean showUsernames;
 
-    private OnNodeClickCallback onNodeClickCallback;
+    private NodeClickCallback nodeClickCallback;
     private NodeMenuListener nodeMenuListener;
     private boolean activateContextMenu;
+    private boolean readOnly;
+    private boolean isASearchResult;
+
+    private Database database;
 
     private int iconGroupColor;
     private int iconEntryColor;
@@ -63,14 +77,14 @@ public class NodeAdapter extends RecyclerView.Adapter<BasicViewHolder> {
      * Create node list adapter with contextMenu or not
      * @param context Context to use
      */
-    public NodeAdapter(final Context context) {
+    public NodeAdapter(final Context context, MenuInflater menuInflater) {
         this.inflater = LayoutInflater.from(context);
+        this.menuInflater = menuInflater;
         this.context = context;
-        this.textSize = PreferencesUtil.getListTextSize(context);
-        this.listSort = PreferencesUtil.getListSort(context);
-        this.groupsBeforeSort = PreferencesUtil.getGroupsBeforeSort(context);
-        this.ascendingSort = PreferencesUtil.getAscendingSort(context);
+        assignPreferences();
         this.activateContextMenu = false;
+        this.readOnly = false;
+        this.isASearchResult = false;
 
         this.nodeSortedList = new SortedList<>(PwNode.class, new SortedListAdapterCallback<PwNode>(this) {
             @Override public int compare(PwNode item1, PwNode item2) {
@@ -86,6 +100,9 @@ public class NodeAdapter extends RecyclerView.Adapter<BasicViewHolder> {
             }
         });
 
+        // Database
+        this.database = App.getDB();
+
         // Retrieve the color to tint the icon
         int[] attrTextColorPrimary = {android.R.attr.textColorPrimary};
         TypedArray taTextColorPrimary = context.getTheme().obtainStyledAttributes(attrTextColorPrimary);
@@ -97,8 +114,30 @@ public class NodeAdapter extends RecyclerView.Adapter<BasicViewHolder> {
         taTextColor.recycle();
     }
 
+    public void setReadOnly(boolean readOnly) {
+        this.readOnly = readOnly;
+    }
+
+    public void setIsASearchResult(boolean isASearchResult) {
+        this.isASearchResult = isASearchResult;
+    }
+
     public void setActivateContextMenu(boolean activate) {
         this.activateContextMenu = activate;
+    }
+
+    private void assignPreferences() {
+        float textSizeDefault = Util.getListTextDefaultSize(context);
+        this.textSize = PreferencesUtil.getListTextSize(context);
+        this.subtextSize = context.getResources().getInteger(R.integer.list_small_size_default)
+                * textSize / textSizeDefault;
+        // Retrieve the icon size
+        float iconDefaultSize = context.getResources().getDimension(R.dimen.list_icon_size_default);
+        this.iconSize = iconDefaultSize * textSize / textSizeDefault;
+        this.listSort = PreferencesUtil.getListSort(context);
+        this.groupsBeforeSort = PreferencesUtil.getGroupsBeforeSort(context);
+        this.ascendingSort = PreferencesUtil.getAscendingSort(context);
+        this.showUsernames = PreferencesUtil.showUsernamesListEntries(context);
     }
 
     /**
@@ -106,9 +145,22 @@ public class NodeAdapter extends RecyclerView.Adapter<BasicViewHolder> {
      */
     public void rebuildList(PwGroup group) {
         this.nodeSortedList.clear();
-        if (group != null) {
+        assignPreferences();
+        // TODO verify sort
+        try {
             this.nodeSortedList.addAll(group.getDirectChildren());
+        } catch (Exception e) {
+            Log.e(TAG, "Can't add node elements to the list", e);
+            Toast.makeText(context, "Can't add node elements to the list : " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
+    }
+
+    /**
+     * Determine if the adapter contains or not any element
+     * @return true if the list is empty
+     */
+    public boolean isEmpty() {
+        return nodeSortedList.size() <= 0;
     }
 
     /**
@@ -172,32 +224,51 @@ public class NodeAdapter extends RecyclerView.Adapter<BasicViewHolder> {
     public void onBindViewHolder(@NonNull BasicViewHolder holder, int position) {
         PwNode subNode = nodeSortedList.get(position);
         // Assign image
-        if (IconPackChooser.getSelectedIconPack(context).tintable()) {
-            int iconColor = Color.BLACK;
-            switch (subNode.getType()) {
-                case GROUP:
-                    iconColor = iconGroupColor;
-                    break;
-                case ENTRY:
-                    iconColor = iconEntryColor;
-                    break;
-            }
-            App.getDB().getDrawFactory().assignDatabaseIconTo(context, holder.icon, subNode.getIcon(), true, iconColor);
-        } else {
-            App.getDB().getDrawFactory().assignDatabaseIconTo(context, holder.icon, subNode.getIcon());
+        int iconColor = Color.BLACK;
+        switch (subNode.getType()) {
+            case GROUP:
+                iconColor = iconGroupColor;
+                break;
+            case ENTRY:
+                iconColor = iconEntryColor;
+                break;
         }
+        database.getDrawFactory().assignDatabaseIconTo(context, holder.icon, subNode.getIcon(), iconColor);
         // Assign text
-        holder.text.setText(subNode.getDisplayTitle());
+        holder.text.setText(subNode.getTitle());
         // Assign click
         holder.container.setOnClickListener(
                 new OnNodeClickListener(subNode));
         // Context menu
         if (activateContextMenu) {
             holder.container.setOnCreateContextMenuListener(
-                    new ContextMenuBuilder(subNode, nodeMenuListener));
+                    new ContextMenuBuilder(subNode, nodeMenuListener, readOnly));
         }
-        // Assign text size
+
+        // Add username
+        holder.subText.setText("");
+        holder.subText.setVisibility(View.GONE);
+        if (subNode.getType().equals(PwNode.Type.ENTRY)) {
+            PwEntry entry = (PwEntry) subNode;
+            entry.startToManageFieldReferences(database.getPwDatabase());
+
+            holder.text.setText(entry.getVisualTitle());
+
+            String username = entry.getUsername();
+            if (showUsernames && !username.isEmpty()) {
+                holder.subText.setVisibility(View.VISIBLE);
+                holder.subText.setText(username);
+            }
+
+            entry.stopToManageFieldReferences();
+        }
+
+        // Assign image and text size
+        // Relative size of the icon
+        holder.icon.getLayoutParams().height = ((int) iconSize);
+        holder.icon.getLayoutParams().width = ((int) iconSize);
         holder.text.setTextSize(textSize);
+        holder.subText.setTextSize(subtextSize);
     }
 
     @Override
@@ -208,8 +279,8 @@ public class NodeAdapter extends RecyclerView.Adapter<BasicViewHolder> {
     /**
      * Assign a listener when a node is clicked
      */
-    public void setOnNodeClickListener(OnNodeClickCallback onNodeClickCallback) {
-        this.onNodeClickCallback = onNodeClickCallback;
+    public void setOnNodeClickListener(NodeClickCallback nodeClickCallback) {
+        this.nodeClickCallback = nodeClickCallback;
     }
 
     /**
@@ -222,7 +293,7 @@ public class NodeAdapter extends RecyclerView.Adapter<BasicViewHolder> {
     /**
      * Callback listener to redefine to do an action when a node is click
      */
-    public interface OnNodeClickCallback {
+    public interface NodeClickCallback {
         void onNodeClick(PwNode node);
     }
 
@@ -232,6 +303,8 @@ public class NodeAdapter extends RecyclerView.Adapter<BasicViewHolder> {
     public interface NodeMenuListener {
         boolean onOpenMenuClick(PwNode node);
         boolean onEditMenuClick(PwNode node);
+        boolean onCopyMenuClick(PwNode node);
+        boolean onMoveMenuClick(PwNode node);
         boolean onDeleteMenuClick(PwNode node);
     }
 
@@ -247,8 +320,8 @@ public class NodeAdapter extends RecyclerView.Adapter<BasicViewHolder> {
 
         @Override
         public void onClick(View v) {
-            if (onNodeClickCallback != null)
-                onNodeClickCallback.onNodeClick(node);
+            if (nodeClickCallback != null)
+                nodeClickCallback.onNodeClick(node);
         }
     }
 
@@ -257,29 +330,60 @@ public class NodeAdapter extends RecyclerView.Adapter<BasicViewHolder> {
      */
     private class ContextMenuBuilder implements View.OnCreateContextMenuListener {
 
-        private static final int MENU_OPEN = Menu.FIRST;
-        private static final int MENU_EDIT = MENU_OPEN + 1;
-        private static final int MENU_DELETE = MENU_EDIT + 1;
-
         private PwNode node;
         private NodeMenuListener menuListener;
+        private boolean readOnly;
 
-        ContextMenuBuilder(PwNode node, NodeMenuListener menuListener) {
+        ContextMenuBuilder(PwNode node, NodeMenuListener menuListener, boolean readOnly) {
             this.menuListener = menuListener;
             this.node = node;
+            this.readOnly = readOnly;
         }
 
         @Override
         public void onCreateContextMenu(ContextMenu contextMenu, View view, ContextMenu.ContextMenuInfo contextMenuInfo) {
-            MenuItem clearMenu = contextMenu.add(Menu.NONE, MENU_OPEN, Menu.NONE, R.string.menu_open);
-            clearMenu.setOnMenuItemClickListener(mOnMyActionClickListener);
-            if (!App.getDB().isReadOnly() && !node.equals(App.getDB().getPwDatabase().getRecycleBin())) {
-                // Edition
-                clearMenu = contextMenu.add(Menu.NONE, MENU_EDIT, Menu.NONE, R.string.menu_edit);
-                clearMenu.setOnMenuItemClickListener(mOnMyActionClickListener);
-                // Deletion
-                clearMenu = contextMenu.add(Menu.NONE, MENU_DELETE, Menu.NONE, R.string.menu_delete);
-                clearMenu.setOnMenuItemClickListener(mOnMyActionClickListener);
+            menuInflater.inflate(R.menu.node_menu, contextMenu);
+
+            // Opening
+            MenuItem menuItem = contextMenu.findItem(R.id.menu_open);
+            menuItem.setOnMenuItemClickListener(mOnMyActionClickListener);
+
+            // Edition
+            if (readOnly || node.equals(App.getDB().getPwDatabase().getRecycleBin())) {
+                contextMenu.removeItem(R.id.menu_edit);
+            } else {
+                menuItem = contextMenu.findItem(R.id.menu_edit);
+                menuItem.setOnMenuItemClickListener(mOnMyActionClickListener);
+            }
+
+            // Copy (not for group)
+            if (readOnly
+                    || isASearchResult
+                    || node.equals(App.getDB().getPwDatabase().getRecycleBin())
+                    || node.getType().equals(PwNode.Type.GROUP)) {
+                // TODO COPY For Group
+                contextMenu.removeItem(R.id.menu_copy);
+            } else {
+                menuItem = contextMenu.findItem(R.id.menu_copy);
+                menuItem.setOnMenuItemClickListener(mOnMyActionClickListener);
+            }
+
+            // Move
+            if (readOnly
+                    || isASearchResult
+                    || node.equals(App.getDB().getPwDatabase().getRecycleBin())) {
+                contextMenu.removeItem(R.id.menu_move);
+            } else {
+                menuItem = contextMenu.findItem(R.id.menu_move);
+                menuItem.setOnMenuItemClickListener(mOnMyActionClickListener);
+            }
+
+            // Deletion
+            if (readOnly || node.equals(App.getDB().getPwDatabase().getRecycleBin())) {
+                contextMenu.removeItem(R.id.menu_delete);
+            } else {
+                menuItem = contextMenu.findItem(R.id.menu_delete);
+                menuItem.setOnMenuItemClickListener(mOnMyActionClickListener);
             }
         }
 
@@ -289,11 +393,15 @@ public class NodeAdapter extends RecyclerView.Adapter<BasicViewHolder> {
                 if (menuListener == null)
                     return false;
                 switch ( item.getItemId() ) {
-                    case MENU_OPEN:
+                    case R.id.menu_open:
                         return menuListener.onOpenMenuClick(node);
-                    case MENU_EDIT:
+                    case R.id.menu_edit:
                         return menuListener.onEditMenuClick(node);
-                    case MENU_DELETE:
+                    case R.id.menu_copy:
+                        return menuListener.onCopyMenuClick(node);
+                    case R.id.menu_move:
+                        return menuListener.onMoveMenuClick(node);
+                    case R.id.menu_delete:
                         return menuListener.onDeleteMenuClick(node);
                     default:
                         return false;

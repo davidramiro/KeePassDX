@@ -19,10 +19,9 @@
  */
 package com.kunzisoft.keepass.database;
 
-import com.kunzisoft.keepass.crypto.keyDerivation.KdfEngine;
 import com.kunzisoft.keepass.database.exception.InvalidKeyFileException;
 import com.kunzisoft.keepass.database.exception.KeyFileEmptyException;
-import com.kunzisoft.keepass.utils.Util;
+import com.kunzisoft.keepass.utils.MemUtil;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -36,7 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-public abstract class PwDatabase<PwGroupDB extends PwGroup<PwGroupDB, PwGroupDB, PwEntryDB>,
+public abstract class PwDatabase<PwGroupDB extends PwGroup<PwGroupDB, PwEntryDB>,
         PwEntryDB extends PwEntry<PwGroupDB>> {
 
     public static final UUID UUID_ZERO = new UUID(0,0);
@@ -129,7 +128,7 @@ public abstract class PwDatabase<PwGroupDB extends PwGroup<PwGroupDB, PwGroupDB,
                 assert(keyInputStream != null);
 
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                Util.copyStream(keyInputStream, bos);
+                MemUtil.copyStream(keyInputStream, bos);
                 byte[] keyData = bos.toByteArray();
 
                 ByteArrayInputStream bis = new ByteArrayInputStream(keyData);
@@ -248,8 +247,6 @@ public abstract class PwDatabase<PwGroupDB extends PwGroup<PwGroupDB, PwGroupDB,
     }
 
     public abstract List<PwEncryptionAlgorithm> getAvailableEncryptionAlgorithms();
-
-    public abstract KdfEngine getKdfEngine();
 
     public abstract List<PwGroupDB> getGrpRoots();
 
@@ -432,5 +429,7 @@ public abstract class PwDatabase<PwGroupDB extends PwGroup<PwGroupDB, PwGroupDB,
      * Initialize a newly created database
      */
     public abstract void initNew(String dbPath);
+
+    public abstract void clearCache();
 
 }

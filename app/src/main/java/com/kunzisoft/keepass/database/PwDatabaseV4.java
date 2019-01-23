@@ -19,17 +19,18 @@
  */
 package com.kunzisoft.keepass.database;
 
+import android.util.Log;
 import android.webkit.URLUtil;
 
 import com.kunzisoft.keepass.collections.VariantDictionary;
 import com.kunzisoft.keepass.crypto.CryptoUtil;
 import com.kunzisoft.keepass.crypto.engine.AesEngine;
 import com.kunzisoft.keepass.crypto.engine.CipherEngine;
-import com.kunzisoft.keepass.crypto.keyDerivation.AesKdf;
 import com.kunzisoft.keepass.crypto.keyDerivation.KdfEngine;
 import com.kunzisoft.keepass.crypto.keyDerivation.KdfFactory;
 import com.kunzisoft.keepass.crypto.keyDerivation.KdfParameters;
 import com.kunzisoft.keepass.database.exception.InvalidKeyFileException;
+import com.kunzisoft.keepass.database.exception.UnknownKDF;
 import com.kunzisoft.keepass.utils.EmptyUtils;
 
 import org.w3c.dom.Document;
@@ -50,6 +51,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import javax.annotation.Nullable;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
@@ -57,6 +59,7 @@ import biz.source_code.base64Coder.Base64Coder;
 
 
 public class PwDatabaseV4 extends PwDatabase<PwGroupV4, PwEntryV4> {
+    private static final String TAG = PwDatabaseV4.class.getName();
 
 	private static final int DEFAULT_HISTORY_MAX_ITEMS = 10; // -1 unlimited
 	private static final long DEFAULT_HISTORY_MAX_SIZE = 6 * 1024 * 1024; // -1 unlimited
@@ -149,10 +152,14 @@ public class PwDatabaseV4 extends PwDatabase<PwGroupV4, PwEntryV4> {
         this.compressionAlgorithm = compressionAlgorithm;
     }
 
-    @Override
-	public KdfEngine getKdfEngine() {
-		return KdfFactory.get(getKdfParameters());
-	}
+	public @Nullable KdfEngine getKdfEngine() {
+        try {
+            return KdfFactory.getEngineV4(kdfParameters);
+        } catch (UnknownKDF unknownKDF) {
+            Log.i(TAG, "Unable to retrieve KDF engine", unknownKDF);
+            return null;
+        }
+    }
 
     public KdfParameters getKdfParameters() {
 	    return kdfParameters;
@@ -395,22 +402,8 @@ public class PwDatabaseV4 extends PwDatabase<PwGroupV4, PwEntryV4> {
 	}
 
 	public void makeFinalKey(byte[] masterSeed) throws IOException {
-    	makeFinalKey(masterSeed, 0);
-	}
 
-	public void makeFinalKey(byte[] masterSeed, long roundsFix)
-			throws IOException {
-
-        KdfEngine kdfEngine = KdfFactory.get(kdfParameters);
-		if (kdfEngine == null) {
-			throw new IOException("Unknown key derivation function");
-		}
-
-		// Set to 6000 rounds to open corrupted database
-		if (roundsFix > 0 && kdfParameters.kdfUUID.equals(AesKdf.CIPHER_UUID)) {
-            kdfParameters.setUInt32(AesKdf.ParamRounds, roundsFix);
-			numKeyEncRounds = roundsFix;
-		}
+        KdfEngine kdfEngine = KdfFactory.getEngineV4(kdfParameters);
 
 		byte[] transformedMasterKey = kdfEngine.transform(masterKey, kdfParameters);
 		if (transformedMasterKey.length != 32) {
@@ -562,15 +555,15 @@ public class PwDatabaseV4 extends PwDatabase<PwGroupV4, PwEntryV4> {
 		super.populateGlobals(currentGroup);
 	}
 	
-	/** Ensure that the recycle bin tree exists, if enabled and create it
-	 *  if it doesn't exist 
-	 *  
+	/**
+     * Ensure that the recycle bin tree exists, if enabled and create it
+     * if it doesn't exist
 	 */
 	private void ensureRecycleBin() {
 		if (getRecycleBin() == null) {
 			// Create recycle bin
 				
-			PwGroupV4 recycleBin = new PwGroupV4(RECYCLEBIN_NAME, iconFactory.getIcon(PwIconStandard.TRASH_BIN));
+			PwGroupV4 recycleBin = new PwGroupV4(RECYCLEBIN_NAME, iconFactory.getTrashIcon());
 			recycleBin.setEnableAutoType(false);
 			recycleBin.setEnableSearching(false);
 			recycleBin.setExpanded(false);
@@ -694,8 +687,7 @@ public class PwDatabaseV4 extends PwDatabase<PwGroupV4, PwEntryV4> {
 	@Override
 	public void undoDeleteEntry(PwEntryV4 entry, PwGroupV4 origParent) {
 		super.undoDeleteEntry(entry, origParent);
-		// TODO undo delete entry
-        deletedObjects.remove(entry);
+        deletedObjects.remove(new PwDeletedObject(entry.getUUID()));
 	}
 
 	@Override
@@ -744,7 +736,7 @@ public class PwDatabaseV4 extends PwDatabase<PwGroupV4, PwEntryV4> {
 
 	@Override
 	public void initNew(String dbPath) {
-		rootGroup = new PwGroupV4(dbNameFromPath(dbPath), iconFactory.getIcon(PwIconStandard.FOLDER));
+		rootGroup = new PwGroupV4(dbNameFromPath(dbPath), iconFactory.getFolderIcon());
 		groups.put(rootGroup.getId(), rootGroup);
 	}
 	
@@ -762,4 +754,8 @@ public class PwDatabaseV4 extends PwDatabase<PwGroupV4, PwEntryV4> {
 		return filename.substring(0, lastExtDot);
 	}
 
+    @Override
+    public void clearCache() {
+        binPool.clear();
+    }
 }

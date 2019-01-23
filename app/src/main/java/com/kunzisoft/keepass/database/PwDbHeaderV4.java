@@ -46,7 +46,6 @@ public class PwDbHeaderV4 extends PwDbHeader {
     private static final int FILE_VERSION_CRITICAL_MASK = 0xFFFF0000;
     public static final int FILE_VERSION_32_3 =           0x00030001;
 	public static final int FILE_VERSION_32_4 =           0x00040000;
-	public static final int FILE_VERSION_32 =             FILE_VERSION_32_4;
 
     public class PwDbHeaderV4Fields {
         public static final byte EndOfHeader = 0;
@@ -146,13 +145,13 @@ public class PwDbHeaderV4 extends PwDbHeader {
 	private int getMinKdbxVersion(PwDatabaseV4 databaseV4) {
 		// Return v4 if AES is not use
 		if (databaseV4.getKdfParameters() != null
-                && !databaseV4.getKdfParameters().kdfUUID.equals(AesKdf.CIPHER_UUID)) {
-			return PwDbHeaderV4.FILE_VERSION_32;
+                && !databaseV4.getKdfParameters().getUUID().equals(AesKdf.CIPHER_UUID)) {
+			return PwDbHeaderV4.FILE_VERSION_32_4;
 		}
 
 		// Return V4 if custom data are present
 		if (databaseV4.containsPublicCustomData()) {
-			return PwDbHeaderV4.FILE_VERSION_32;
+			return PwDbHeaderV4.FILE_VERSION_32_4;
 		}
 
 		EntryHasCustomData entryHandler = new EntryHasCustomData();
@@ -163,7 +162,7 @@ public class PwDbHeaderV4 extends PwDbHeader {
 		}
         databaseV4.getRootGroup().preOrderTraverseTree(groupHandler, entryHandler);
 		if (groupHandler.hasCustomData || entryHandler.hasCustomData) {
-			return PwDbHeaderV4.FILE_VERSION_32;
+			return PwDbHeaderV4.FILE_VERSION_32_4;
 		}
 
 		return PwDbHeaderV4.FILE_VERSION_32_3;
@@ -210,7 +209,7 @@ public class PwDbHeaderV4 extends PwDbHeader {
 	
 	private boolean readHeaderField(LEDataInputStream dis) throws IOException {
 		byte fieldID = (byte) dis.read();
-		
+
 		int fieldSize;
 		if (version < FILE_VERSION_32_4) {
 			fieldSize = dis.readUShort();
@@ -221,7 +220,7 @@ public class PwDbHeaderV4 extends PwDbHeader {
 		byte[] fieldData = null;
 		if ( fieldSize > 0 ) {
 			fieldData = new byte[fieldSize];
-			
+
 			int readSize = dis.read(fieldData);
 			if ( readSize != fieldSize ) {
 				throw new IOException("Header ended early.");
@@ -287,7 +286,7 @@ public class PwDbHeaderV4 extends PwDbHeader {
 	}
 
 	private void assignAesKdfEngineIfNotExists() {
-        if (db.getKdfParameters() == null || !db.getKdfParameters().kdfUUID.equals(KdfFactory.aesKdf.uuid)) {
+        if (db.getKdfParameters() == null || !db.getKdfParameters().getUUID().equals(KdfFactory.aesKdf.getUUID())) {
             db.setKdfParameters(KdfFactory.aesKdf.getDefaultParameters());
         }
     }
@@ -346,11 +345,11 @@ public class PwDbHeaderV4 extends PwDbHeader {
 	 * @return true if it's a supported version
 	 */
 	private boolean validVersion(long version) {
-		return ! ((version & FILE_VERSION_CRITICAL_MASK) > (FILE_VERSION_32 & FILE_VERSION_CRITICAL_MASK));
+		return ! ((version & FILE_VERSION_CRITICAL_MASK) > (FILE_VERSION_32_4 & FILE_VERSION_CRITICAL_MASK));
 	}
 
 	public static boolean matchesHeader(int sig1, int sig2) {
-	    return (sig1 == PWM_DBSIG_1) && ( (sig2 == DBSIG_PRE2) || (sig2 == DBSIG_2) ); // TODO verify add DBSIG_PRE2
+	    return (sig1 == PWM_DBSIG_1) && ( (sig2 == DBSIG_PRE2) || (sig2 == DBSIG_2) );
 	}
 
 	public static byte[] computeHeaderHmac(byte[] header, byte[] key) throws IOException{
